@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
  
 #define BUFSIZE 1024 // Größe des Buffers
 #define TRUE 1
@@ -24,7 +25,7 @@ int main() {
   int cfd; // Verbindungs-Descriptor
  
   struct sockaddr_in client; // Socketadresse eines Clients
-  socklen_t client_len; // Länge der Client-Daten
+  socklen_t client_len = sizeof(client); // Länge der Client-Daten
   char in[BUFSIZE]; // Daten vom Client an den Server
   int bytes_read; // Anzahl der Bytes, die der Client geschickt hat
  
@@ -71,7 +72,7 @@ int main() {
  
     // Zurückschicken der Daten, solange der Client welche schickt (und kein Fehler passiert)
     while (bytes_read > 0) {
-      printf("sending back the %d bytes I received...\n", bytes_read);
+      printf("sending back the %d bytes I received from %s:%d\n", bytes_read, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
  
       write(cfd, in, bytes_read);
       bytes_read = read(cfd, in, BUFSIZE);
