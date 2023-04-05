@@ -38,8 +38,8 @@ int put(char *key, char *value) {
     struct keyval *current = &keyval_store[index];
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
     if (current->key[0] == '\0') {
-        strncpy(current->key, key, KEYSIZE); //Nur Keysize Bytes, da sonst Speicher überschrieben wird
-        strncpy(current->value, value, VALUESIZE); //Nur Valuesize Bytes, da sonst Speicher überschrieben wird
+        strncpy(current->key, key, KEYSIZE); //Nur Keysize Bytes, da sonst Speicher überschrieben wird. Eingabe wird ggf. abgeschnitten.
+        strncpy(current->value, value, VALUESIZE); //Nur Valuesize Bytes, da sonst Speicher überschrieben wird. Eingabe wird ggf. abgeschnitten.
         current->next = NULL;
         return 0;
     }
