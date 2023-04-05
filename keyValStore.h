@@ -7,11 +7,14 @@ int generate_hashcode(char *input);
 //Funktion zum Einfügen eines Elements
 int put(char *key, char *value);
 
+//Value eines Elements ändern
+int change(char *key, char *value);
+
 //Funktion zum Auslesen eines Elements
-char *get(char *key) ;
+char *get(char *key);
 
 //Funktion zum Löschen eines Elements
-int delete (char *key);
+int delete(char *key);
 
 //Funktion zum Löschen aller Elemente
 int clear();

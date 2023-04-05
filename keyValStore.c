@@ -3,13 +3,17 @@
 #include "stdlib.h"
 #include "sub.h"
 
+#define STORESIZE 500
+#define KEYSIZE 20
+#define VALUESIZE 50
+
 struct keyval {
-    char key[20];
-    char value[20];
+    char key[KEYSIZE];
+    char value[VALUESIZE];
     struct keyval *next;
 };
 
-struct keyval keyval_store[500] = {
+struct keyval keyval_store[STORESIZE] = {
         [0 ... 499] = {
                 .key = "",
                 .value = "",
@@ -18,6 +22,7 @@ struct keyval keyval_store[500] = {
 };
 
 //Hashcode generieren
+//TODO: Überprüfen, dass Hashcode Größe des Arrays nicht übersteigt
 int generate_hashcode(char *input) {
     int output = 0;
     for (int i = 0; i < strlen(input); i++) {
@@ -28,14 +33,13 @@ int generate_hashcode(char *input) {
 
 //Funktion zum Einfügen eines Elements
 int put(char *key, char *value) {
-    check_key(key);
     int hashcode = generate_hashcode(key);
     int index = hashcode % 500;
     struct keyval *current = &keyval_store[index];
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
     if (current->key[0] == '\0') {
-        strcpy(current->key, key);
-        strcpy(current->value, value);
+        strncpy(current->key, key, KEYSIZE); //Nur Keysize Bytes, da sonst Speicher überschrieben wird
+        strncpy(current->value, value, VALUESIZE); //Nur Valuesize Bytes, da sonst Speicher überschrieben wird
         current->next = NULL;
         return 0;
     }
@@ -44,10 +48,30 @@ int put(char *key, char *value) {
         current = current->next;
     }
     current->next = malloc(sizeof(struct keyval));
-    strcpy(current->next->key, key);
-    strcpy(current->next->value, value);
+    strncpy(current->next->key, key, KEYSIZE);
+    strncpy(current->next->value, value, KEYSIZE);
     current->next->next = NULL;
     return 0;
+}
+
+//Value eines Elements ändern
+int change(char *key, char *value) {
+    int hashcode = generate_hashcode(key);
+    int index = hashcode % 500;
+    struct keyval *current = &keyval_store[index];
+    //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
+    if (current->key[0] == '\0') {
+        return -1; //Element nicht gefunden
+    }
+    //Falls Index nicht leer, Verkettung anwenden
+    while (current != NULL) {
+        if (strcmp(current->key, key) == 0) {
+            strncpy(current->value, value, KEYSIZE);
+            return 0; //Element erfolgreich geändert
+        }
+        current = current->next;
+    }
+    return -1;
 }
 
 //Funktion zum Auslesen eines Elements
@@ -70,7 +94,7 @@ char *get(char *key) {
 }
 
 //Funktion zum Löschen eines Elements
-int delete (char *key) {
+int delete(char *key) {
     int hashcode = generate_hashcode(key);
     int index = hashcode % 500;
     struct keyval *current = &keyval_store[index];

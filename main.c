@@ -26,19 +26,25 @@
 
 *******************************************************************************/
 
-//Gibt 0 zurück, wenn keine alphanumerischen Zeichen im String sind, sonst -1
+//Gibt 0 zurück, wenn keine alphanumerischen Zeichen oder Leerzeichen im String sind, sonst -1
 int check_key(char *key);
 
+//Gibt 0 zurück, wenn keine alphanumerischen Zeichen im String sind, sonst -1
+int check_value(char *value);
+
 //Ausgabe im Format "> pfx:key:value\r\n"
-char* getoutputString(char* pfx, char* key, char* value);
+char *getoutputString(char *pfx, char *key, char *value);
 
 /**
  * Sendet einen Fehler an den Client
- * @param err_code Fehlercode (1 = not_alphanumeric, 2 = unknown_command)
+ * @param err_code Fehlercode (1 = not_alphanumeric, 2 = unknown_command, 3 = too_many_arguments, 4 = unknown_error)
  * @param cfd Client-File-Descriptor
  * @return  Anzahl der gesendeten Bytes oder -1 bei Fehler
  */
 long sendError(int err_code, int cfd);
+
+//Auswertung der Kommandos
+int commandInterpreter(char *comm, int cfd);
 
 /*******************************************************************************
  *
@@ -95,57 +101,20 @@ int main() {
         // Lesen von Daten, die der Client schickt
         bytes_read = read(cfd, in, BUFSIZE);
 
-        // Zurückschicken der Daten, solange der Client welche schickt (und kein Fehler passiert)
+        // Interpretieren von Daten, die der Client schickt
         while (bytes_read > 0) {
+            char *comm = malloc(BUFSIZE + 1);
+            strncpy(comm, in, bytes_read);
+            comm[bytes_read] = '\0';
+
             printf("%d bytes received from %s:%d\n", bytes_read, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-            //TODO: Besseres Fehlerhandling einbauen
-
-            // Überprüfen, ob es sich bei dem Befehl um einen PUT, GET oder DEL handelt
-            if (strncmp(in, "PUT", 3) == 0) { // Befehl PUT
-                char *pfx = strtok(in, " ");
-                char *key = strtok(NULL, " ");
-                char *value = strtok(NULL, "\r\n"); //Teilstring bis zum Zeilenumbruch
-                if (check_key(key) != 0 || check_key(value) != 0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
-                    sendError(1, cfd);
-                } else {
-                    if (contains(key) == 0) { //Überprüfen, ob Key bereits vorhanden ist
-                        value = "key_already_exists";
-                    } else {
-                        put(key, value); //Key und Value werden in die Hashmap gespeichert
-                    }
-                    char *out = getoutputString(pfx, key, value);
-                    write(cfd, out, strlen(out) + 1);
-                }
-            } else if (strncmp(in, "GET", 3) == 0) { // Befehl GET
-                char *pfx = strtok(in, " ");
-                char *key = strtok(NULL, "\r\n"); //Teilstring bis zum Zeilenumbruch
-                char *value = get(key); //Wert wird aus der Hashmap geholt
-                if (check_key(key) != 0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
-                    sendError(1, cfd);
-                } else {
-                    if (value == NULL) { //Wenn der Key nicht existiert
-                        value = "key_nonexistent";
-                    }
-                    char *out = getoutputString(pfx, key, value);
-                    write(cfd, out, strlen(out) + 1);
-                }
-            } else if (strncmp(in, "DEL", 3) == 0) {
-                char *pfx = strtok(in, " ");
-                char *key = strtok(NULL, "\r\n"); //Teilstring bis zum Zeilenumbruch
-                if (check_key(key) != 0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
-                    sendError(1, cfd);
-                } else {
-                    delete(key); //Key wird aus der Hashmap gelöscht
-                    char *out = getoutputString(pfx, key, "key_deleted");
-                    write(cfd, out, strlen(out) + 1);
-                }
-            } else if (strncmp(in, "QUIT", 4) == 0) {
+            //Auswertung der Kommandos
+            if (commandInterpreter(comm, cfd)) {
                 break;
-            } else {
-                sendError(2, cfd);
             }
-            bytes_read = read(cfd, in, BUFSIZE);
+
+            bytes_read = read(cfd, in, BUFSIZE); //Lesen von Daten, die der Client schickt
         }
         close(cfd);
     }
@@ -153,6 +122,77 @@ int main() {
     // Rendezvous Descriptor schließen
     close(rfd);
 
+}
+
+int commandInterpreter(char *comm, int cfd) {
+    // Befehl in einzelne Teile zerlegen
+    char delimiter[] = " \r\n";
+    char *pfx = strtok(comm, delimiter);
+    char *key = strtok(NULL, delimiter);
+    char *value = strtok(NULL, "\r\n");
+
+    // Überprüfen, ob es sich bei dem Befehl um einen PUT, GET oder DEL handelt
+    if (strcmp(comm, "PUT") == 0) { // Befehl PUT
+        if (check_key(key) != 0 || check_value(value) !=
+                                   0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält und Value nur alphanumerische Zeichen enthält
+            sendError(1, cfd);
+        } else {
+            if (contains(key) ==
+                0) { //Überprüfen, ob Key bereits vorhanden ist, dann soll der neue Wert in der Hashmap gespeichert werden und der alte Wert zurückgegeben werden
+                char *OldGet = get(key);
+                char *old_ = malloc(strlen(OldGet) + 1);
+                strcpy(old_, OldGet); //Alten Wert in einen neuen String kopieren, da dieser sonst überschrieben wird
+                change(key, value); //Value wird geändert
+                value = old_;
+            } else {
+                put(key, value); //Key und Value werden in die Hashmap gespeichert
+            }
+            char *out = getoutputString(pfx, key, value);
+            write(cfd, out, strlen(out) + 1);
+        }
+    } else if (strcmp(comm, "GET") == 0) { // Befehl GET
+        if (value != NULL) { //Überprüfen, dass kein Value angegeben wurde
+            sendError(3, cfd);
+        } else {
+            value = get(key); //Wert wird aus der Hashmap geholt
+            if (check_key(key) !=
+                0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
+                sendError(1, cfd);
+            } else {
+                if (value == NULL) { //Wenn der Key nicht existiert
+                    value = "key_nonexistent";
+                }
+                char *out = getoutputString(pfx, key, value);
+                write(cfd, out, strlen(out) + 1);
+            }
+        }
+    } else if (strcmp(comm, "DEL") == 0) { // Befehl DEL
+        if (value != NULL) { //Überprüfen, dass kein Value angegeben wurde
+            sendError(3, cfd);
+        } else {
+            if (check_key(key) !=
+                0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
+                sendError(1, cfd);
+            } else {
+                if (delete(key) == -1) { //Key wird aus der Hashmap gelöscht
+                    value = "key_nonexistent";
+                } else {
+                    value = "key_deleted";
+                }
+                char *out = getoutputString(pfx, key, value);
+                write(cfd, out, strlen(out) + 1);
+            }
+        }
+    } else if (strcmp(comm, "QUIT") == 0) { // Befehl QUIT
+        if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
+            sendError(3, cfd);
+        } else {
+            return 1;
+        }
+    } else { // Befehl unbekannt
+        sendError(2, cfd);
+    }
+    return 0;
 }
 
 int check_key(char *key) {
@@ -164,8 +204,20 @@ int check_key(char *key) {
     return 0;
 }
 
+int check_value(char *value) {
+    for (int i = 0; i < strlen(value); i++) {
+        if (!isalnum(value[i])) { //isalnum prüft, ob Zeichen alphanumerisch ist
+            if (value[i] == ' ') {
+                return 0;
+            }
+            return -1;
+        }
+    }
+    return 0;
+}
+
 char *getoutputString(char *pfx, char *key, char *value) {
-    char* out = malloc(strlen(pfx) + strlen(key) + strlen(value) + 7); // 7 = 2x ":" + " " + "\r\n" + ">" + "\0"
+    char *out = malloc(strlen(pfx) + strlen(key) + strlen(value) + 7); // 7 = 2x ":" + " " + "\r\n" + ">" + "\0"
     strcpy(out, "> ");
     strcat(out, pfx);
     strcat(out, ":");
@@ -179,11 +231,13 @@ char *getoutputString(char *pfx, char *key, char *value) {
 long sendError(int err_code, int cfd) {
     switch (err_code) {
         case 1:
-            return write(cfd,"> not_alphanumeric\r\n", 20);
+            return write(cfd, "> not_alphanumeric\r\n", 20);
         case 2:
-            return write(cfd,"> unknown_command\r\n", 20);
+            return write(cfd, "> command_nonexistent\r\n", 23);
+        case 3:
+            return write(cfd, "> too_many_arguments\r\n", 22);
         default:
-            return write(cfd,"> unknown_error\r\n", 20);
+            return write(cfd, "> unknown_error\r\n", 17);
     }
     return 0;
 }
