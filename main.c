@@ -35,13 +35,20 @@ int check_value(char *value);
 //Ausgabe im Format "> pfx:key:value\r\n"
 char *getoutputString(char *pfx, char *key, char *value);
 
+enum error_codes {
+    not_alphanumeric = 1,
+    unknown_command = 2,
+    too_many_arguments = 3,
+    unknown_error = 4
+};
+
 /**
  * Sendet einen Fehler an den Client
- * @param err_code Fehlercode (1 = not_alphanumeric, 2 = unknown_command, 3 = too_many_arguments, 4 = unknown_error)
+ * @param err_code Fehlercode aus enum error_codes
  * @param cfd Client-File-Descriptor
  * @return  Anzahl der gesendeten Bytes oder -1 bei Fehler
  */
-long sendError(int err_code, int cfd);
+long sendError(enum error_codes err_code, int cfd);
 
 //Auswertung der Kommandos
 int commandInterpreter(char *comm, int cfd);
@@ -133,12 +140,10 @@ int commandInterpreter(char *comm, int cfd) {
 
     // Überprüfen, ob es sich bei dem Befehl um einen PUT, GET oder DEL handelt
     if (strcmp(comm, "PUT") == 0) { // Befehl PUT
-        if (check_key(key) != 0 || check_value(value) !=
-                                   0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält und Value nur alphanumerische Zeichen enthält
-            sendError(1, cfd);
+        if (check_key(key) != 0 || check_value(value) !=0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält und Value nur alphanumerische Zeichen enthält
+            sendError(not_alphanumeric, cfd);
         } else {
-            if (contains(key) ==
-                0) { //Überprüfen, ob Key bereits vorhanden ist, dann soll der neue Wert in der Hashmap gespeichert werden und der alte Wert zurückgegeben werden
+            if (contains(key) ==0) { //Überprüfen, ob Key bereits vorhanden ist, dann soll der neue Wert in der Hashmap gespeichert werden und der alte Wert zurückgegeben werden
                 char *OldGet = get(key);
                 char *old_ = malloc(strlen(OldGet) + 1);
                 strcpy(old_, OldGet); //Alten Wert in einen neuen String kopieren, da dieser sonst überschrieben wird
@@ -152,12 +157,11 @@ int commandInterpreter(char *comm, int cfd) {
         }
     } else if (strcmp(comm, "GET") == 0) { // Befehl GET
         if (value != NULL) { //Überprüfen, dass kein Value angegeben wurde
-            sendError(3, cfd);
+            sendError(too_many_arguments, cfd);
         } else {
             value = get(key); //Wert wird aus der Hashmap geholt
-            if (check_key(key) !=
-                0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
-                sendError(1, cfd);
+            if (check_key(key) !=0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
+                sendError(not_alphanumeric, cfd);
             } else {
                 if (value == NULL) { //Wenn der Key nicht existiert
                     value = "key_nonexistent";
@@ -168,11 +172,10 @@ int commandInterpreter(char *comm, int cfd) {
         }
     } else if (strcmp(comm, "DEL") == 0) { // Befehl DEL
         if (value != NULL) { //Überprüfen, dass kein Value angegeben wurde
-            sendError(3, cfd);
+            sendError(too_many_arguments, cfd);
         } else {
-            if (check_key(key) !=
-                0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
-                sendError(1, cfd);
+            if (check_key(key) !=0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
+                sendError(not_alphanumeric, cfd);
             } else {
                 if (delete(key) == -1) { //Key wird aus der Hashmap gelöscht
                     value = "key_nonexistent";
@@ -185,12 +188,12 @@ int commandInterpreter(char *comm, int cfd) {
         }
     } else if (strcmp(comm, "QUIT") == 0) { // Befehl QUIT
         if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
-            sendError(3, cfd);
+            sendError(too_many_arguments, cfd);
         } else {
             return 1;
         }
     } else { // Befehl unbekannt
-        sendError(2, cfd);
+        sendError(unknown_command, cfd);
     }
     return 0;
 }
