@@ -195,6 +195,7 @@ long commandInterpreter(char *comm, int cfd) {
                 } else {
                     printf("PUT: Key %s wurde hinzugefügt. Wert: %s\n", key, value);
                     put(key, value); //Key und Value werden in die Hashmap gespeichert
+                    value = get(key); //Value wird erneut aus der Hashmap geholt, um den tatsächlichen Wert zu erhalten (kann gekürzt werden)
                 }
                 char *out = getoutputString(pfx, key, value);
                 bytes_sent = write(cfd, out, strlen(out) + 1);
