@@ -231,7 +231,7 @@ char *getoutputString(char *pfx, char *key, char *value) {
     return out;
 }
 
-long sendError(int err_code, int cfd) {
+long sendError(enum error_codes err_code, int cfd) {
     switch (err_code) {
         case 1:
             return write(cfd, "> not_alphanumeric\r\n", 20);
