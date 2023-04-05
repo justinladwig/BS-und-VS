@@ -52,7 +52,7 @@ enum error_codes {
  */
 long sendError(enum error_codes err_code, int cfd);
 
-//Auswertung der Kommandos. Gibt die Anzahl der gesendeten Bytes zurück oder -1 bei Fehler
+//Auswertung der Kommandos. Gibt die Anzahl der gesendeten Bytes zurück oder -2 bei QUIT oder -1 bei Fehler
 long commandInterpreter(char *comm, int cfd);
 
 /*******************************************************************************
@@ -151,7 +151,7 @@ int main() {
 
             //Auswertung der Kommandos
             bytes_sent = commandInterpreter(comm, cfd);
-            if (bytes_sent == 0) break; //Wenn der Client QUIT geschickt hat, wird die Verbindung beendet
+            if (bytes_sent == -2) break; //Wenn der Client QUIT geschickt hat, wird die Verbindung beendet
 
             printf("%ld bytes sent to %s:%d, waiting for next command...\n", bytes_sent, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
@@ -253,7 +253,7 @@ long commandInterpreter(char *comm, int cfd) {
             bytes_sent = sendError(too_many_arguments, cfd);
         } else {
             printf("QUIT: Verbindung wird beendet\n");
-            return 0;
+            return -2;
         }
     } else { // Befehl unbekannt
         printf("Kommando nicht vorhanden\n");
