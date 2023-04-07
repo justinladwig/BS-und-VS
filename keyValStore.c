@@ -7,12 +7,14 @@
 #define KEYSIZE 20
 #define VALUESIZE 50
 
+//Erzeugung eines Knoten für eine Liste
 struct keyval {
-    char key[KEYSIZE];
-    char value[VALUESIZE];
-    struct keyval *next;
+    char key[KEYSIZE];      //Schlüssel, um die Daten zu finden
+    char value[VALUESIZE];  //Daten, welche mit dem Schlüssel aufgerufen werden können
+    struct keyval *next;    //Nächster Knoten einer Liste
 };
 
+// Erzeugung eines leeren Arrays
 struct keyval keyval_store[STORESIZE] = {
         [0 ... 499] = {
                 .key = "",
@@ -21,21 +23,20 @@ struct keyval keyval_store[STORESIZE] = {
         }
 };
 
-//Hashcode generieren
-//TODO: Überprüfen, dass Hashcode Größe des Arrays nicht übersteigt
+//Hashcode für einen Key generieren
+//TODO: Überprüfen, dass Hashcode Größe des Arrays nicht übersteigt https://www.digitalocean.com/community/tutorials/hash-table-in-c-plus-plus
 int generate_hashcode(char *input) {
     int output = 0;
     for (int i = 0; i < strlen(input); i++) {
         output += (int) input[i];
     }
-    return output;
+    return output % STORESIZE; //Damit Arraygröße nicht überschritten wird
 }
 
 //Funktion zum Einfügen eines Elements
 int put(char *key, char *value) {
-    int hashcode = generate_hashcode(key);
-    int index = hashcode % 500;
-    struct keyval *current = &keyval_store[index];
+    int index = generate_hashcode(key); //Hashcode generieren
+    struct keyval *current = &keyval_store[index]; //Pointer auf Element mit Index des Hashcodes.
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
     if (current->key[0] == '\0') {
         strncpy(current->key, key, KEYSIZE); //Nur Keysize Bytes, da sonst Speicher überschrieben wird. Eingabe wird ggf. abgeschnitten.
@@ -56,9 +57,8 @@ int put(char *key, char *value) {
 
 //Value eines Elements ändern
 int change(char *key, char *value) {
-    int hashcode = generate_hashcode(key);
-    int index = hashcode % 500;
-    struct keyval *current = &keyval_store[index];
+    int index = generate_hashcode(key); //Hashcode generieren
+    struct keyval *current = &keyval_store[index]; //Pointer auf Element mit Index des Hashcodes.
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
     if (current->key[0] == '\0') {
         return -1; //Element nicht gefunden
@@ -71,14 +71,13 @@ int change(char *key, char *value) {
         }
         current = current->next;
     }
-    return -1;
+    return -1; //Element nicht gefunden
 }
 
 //Funktion zum Auslesen eines Elements
 char *get(char *key) {
-    int hashcode = generate_hashcode(key);
-    int index = hashcode % 500;
-    struct keyval *current = &keyval_store[index];
+    int index  = generate_hashcode(key); //Hashcode generieren
+    struct keyval *current = &keyval_store[index]; //Pointer auf Element mit Index des Hashcodes.
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
     if (current->key[0] == '\0') {
         return NULL;
@@ -86,7 +85,7 @@ char *get(char *key) {
     //Falls Index nicht leer, Verkettung anwenden
     while (current != NULL) {
         if (strcmp(current->key, key) == 0) {
-            return current->value;
+            return current->value; //Element erfolgreich gefunden
         }
         current = current->next;
     }
@@ -95,9 +94,8 @@ char *get(char *key) {
 
 //Funktion zum Löschen eines Elements
 int delete(char *key) {
-    int hashcode = generate_hashcode(key);
-    int index = hashcode % 500;
-    struct keyval *current = &keyval_store[index];
+    int index = generate_hashcode(key); //Hashcode generieren
+    struct keyval *current = &keyval_store[index]; //Pointer auf Element mit Index des Hashcodes.
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
     if (current->key[0] == '\0') {
         return -1; //Element nicht gefunden
@@ -111,7 +109,7 @@ int delete(char *key) {
             return 0; //Element erfolgreich gelöscht
         } else {
             keyval_store[index] = *current->next; //Übernimmt die Werte des nächsten Elements
-            free(current); //Löscht das erste Element
+            free(current); //Löscht das erste Element vom Speicher
             return 0; //Element erfolgreich gelöscht
         }
     }
@@ -135,7 +133,7 @@ int delete(char *key) {
 
 //Funktion zum Löschen aller Elemente
 int clear() {
-    for (int i = 0; i < 500; i++) {
+    for (int i = 0; i < STORESIZE; i++) {
         keyval_store[i].key[0] = '\0';
         keyval_store[i].value[0] = '\0';
         keyval_store[i].next = NULL;
@@ -146,7 +144,7 @@ int clear() {
 //Überprüfen, ob Key bereits vorhanden ist
 int contains(char *key) {
     int hashcode = generate_hashcode(key);
-    int index = hashcode % 500;
+    int index = hashcode;
     struct keyval *current = &keyval_store[index];
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
     if (current->key[0] == '\0') {

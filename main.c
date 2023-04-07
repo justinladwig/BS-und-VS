@@ -28,9 +28,6 @@
  *******************************************************************************/
 
 //Gibt 0 zurück, wenn keine alphanumerischen Zeichen oder Leerzeichen im String sind, sonst -1
-int check_key(char *key);
-
-//Gibt 0 zurück, wenn keine alphanumerischen Zeichen im String sind, sonst -1
 int check_value(char *value);
 
 //Ausgabe im Format "> pfx:key:value\r\n"
@@ -143,7 +140,8 @@ int main() {
 
         // Interpretieren von Daten, die der Client schickt
         while (bytes_read > 0) {
-            char *comm = malloc(BUFSIZE + 1);
+            //Manuelle Nullterminierung des Strings
+            char *comm = malloc(BUFSIZE + 1); // +1 für Nullterminierung
             strncpy(comm, in, bytes_read);
             comm[bytes_read] = '\0';
 
@@ -157,8 +155,8 @@ int main() {
 
             bytes_read = read(cfd, in, BUFSIZE); //Lesen von Daten, die der Client schickt
         }
-        printf("Client %s:%d disconnected.\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
         close(cfd);
+        printf("Client %s:%d disconnected.\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
     }
 
     // Rendezvous Descriptor schließen
@@ -176,12 +174,12 @@ long commandInterpreter(char *comm, int cfd) {
     char *value = strtok(NULL, "\r\n");
 
     // Überprüfen, ob es sich bei dem Befehl um einen PUT, GET oder DEL handelt
-    if (strcmp(comm, "PUT") == 0) { // Befehl PUT
+    if (strcmp(pfx, "PUT") == 0) { // Befehl PUT
         if (key == NULL || value == NULL) { //Überprüfen, ob Key und Value angegeben wurden
             printf("PUT: Zu wenig Argumente angegeben.\n");
             bytes_sent = sendError(too_few_arguments, cfd);
         } else {
-            if (check_key(key) != 0 || check_value(value) !=0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält und Value nur alphanumerische Zeichen enthält
+            if (check_value(key) != 0 || check_value(value) != 0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält und Value nur alphanumerische Zeichen enthält
                 printf("PUT: Key oder Value enthält nicht alphanumerische Zeichen.\n");
                 bytes_sent = sendError(not_alphanumeric, cfd);
             } else {
@@ -193,15 +191,15 @@ long commandInterpreter(char *comm, int cfd) {
                     printf("PUT: Key %s wurde geändert. Alter Wert: %s, neuer Wert: %s\n", key, old_, value);
                     value = old_;
                 } else {
-                    printf("PUT: Key %s wurde hinzugefügt. Wert: %s\n", key, value);
                     put(key, value); //Key und Value werden in die Hashmap gespeichert
+                    printf("PUT: Key %s wurde hinzugefügt. Wert: %s\n", key, value);
                     value = get(key); //Value wird erneut aus der Hashmap geholt, um den tatsächlichen Wert zu erhalten (kann gekürzt werden)
                 }
                 char *out = getoutputString(pfx, key, value);
-                bytes_sent = write(cfd, out, strlen(out) + 1);
+                bytes_sent = write(cfd, out, strlen(out));
             }
         }
-    } else if (strcmp(comm, "GET") == 0) { // Befehl GET
+    } else if (strcmp(pfx, "GET") == 0) { // Befehl GET
         if (value != NULL) { //Überprüfen, dass kein Value angegeben wurde
             printf("GET: Zu viele Argumente angegeben\n");
             bytes_sent = sendError(too_many_arguments, cfd);
@@ -209,21 +207,21 @@ long commandInterpreter(char *comm, int cfd) {
             printf("GET: Zu wenige Argumente angegeben\n");
             bytes_sent = sendError(too_few_arguments, cfd);
         } else {
-            value = get(key); //Wert wird aus der Hashmap geholt
-            if (check_key(key) !=0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
+            if (check_value(key) != 0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
                 printf("GET: Key enthält nicht alphanumerische Zeichen\n");
                 bytes_sent = sendError(not_alphanumeric, cfd);
             } else {
+                value = get(key); //Wert wird aus der Hashmap geholt
                 if (value == NULL) { //Wenn der Key nicht existiert
                     printf("GET: Key existiert nicht\n");
                     value = "key_nonexistent";
                 }
                 char *out = getoutputString(pfx, key, value);
                 printf("GET: Key %s, Wert: %s\n", key, value);
-                bytes_sent = write(cfd, out, strlen(out) + 1);
+                bytes_sent = write(cfd, out, strlen(out));
             }
         }
-    } else if (strcmp(comm, "DEL") == 0) { // Befehl DEL
+    } else if (strcmp(pfx, "DEL") == 0) { // Befehl DEL
         if (value != NULL) { //Überprüfen, dass kein Value angegeben wurde
             printf("DEL: Zu viele Argumente angegeben\n");
             bytes_sent = sendError(too_many_arguments, cfd);
@@ -231,7 +229,7 @@ long commandInterpreter(char *comm, int cfd) {
             printf("DEL: Zu wenige Argumente angegeben\n");
             bytes_sent = sendError(too_few_arguments, cfd);
         } else {
-            if (check_key(key) !=0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
+            if (check_value(key) != 0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
                 printf("DEL: Key enthält nicht alphanumerische Zeichen\n");
                 bytes_sent = sendError(not_alphanumeric, cfd);
             } else {
@@ -244,10 +242,10 @@ long commandInterpreter(char *comm, int cfd) {
                 }
                 char *out = getoutputString(pfx, key, value);
                 printf("DEL: Key %s, Wert: %s\n", key, value);
-                bytes_sent = write(cfd, out, strlen(out) + 1);
+                bytes_sent = write(cfd, out, strlen(out));
             }
         }
-    } else if (strcmp(comm, "QUIT") == 0) { // Befehl QUIT
+    } else if (strcmp(pfx, "QUIT") == 0) { // Befehl QUIT
         if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
             printf("QUIT: Zu viele Argumente angegeben\n");
             bytes_sent = sendError(too_many_arguments, cfd);
@@ -262,20 +260,11 @@ long commandInterpreter(char *comm, int cfd) {
     return bytes_sent;
 }
 
-int check_key(char *key) {
-    for (int i = 0; i < strlen(key); i++) {
-        if (!isalnum(key[i])) { //isalnum prüft, ob Zeichen alphanumerisch ist
-            return -1;
-        }
-    }
-    return 0;
-}
-
 int check_value(char *value) {
     for (int i = 0; i < strlen(value); i++) {
         if (!isalnum(value[i])) { //isalnum prüft, ob Zeichen alphanumerisch ist
             if (value[i] == ' ') {
-                return 0;
+                continue;
             }
             return -1;
         }
@@ -286,7 +275,7 @@ int check_value(char *value) {
 char *getoutputString(char *pfx, char *key, char *value) {
     char *out = malloc(strlen(pfx) + strlen(key) + strlen(value) + 5); // 7 = 2x ":" + " " + "\r\n" + ">" + "\0"
 //    strcpy(out, "> ");
-    strcat(out, pfx);
+    strcpy(out, pfx);
     strcat(out, ":");
     strcat(out, key);
     strcat(out, ":");
