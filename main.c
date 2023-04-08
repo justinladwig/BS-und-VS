@@ -14,12 +14,14 @@
 #include <string.h>
 #include <ctype.h>
 #include <signal.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include "keyValStore.h"
 #include "sub.h"
 
 #define BUFSIZE 1024 // Größe des Buffers
 #define ENDLOSSCHLEIFE 1
-#define PORT 5678
+#define PORT 5678 // Port, auf dem der Server lauscht
 
 /*******************************************************************************
  *
@@ -38,6 +40,7 @@ enum error_codes {
     unknown_command = 2,
     too_many_arguments = 3,
     too_few_arguments = 4,
+    no_more_memory_available = 5,
     unknown_error = 5
 };
 
@@ -64,6 +67,31 @@ void sigintHandler(int sig_num) {
     exit(0);
 }
 
+//    keyval_store = (int*)shmat(id,0,0);
+//    keyval_store = 0;
+
+//    for(i = 0; i < NUM_OF_CHILDS; i++)
+//        pid[i] = fork();
+//    //if (pid[i] == -1) {
+//printf("Kindprozess konnte nicht erzeugt werden!\n");
+//exit(1);
+//
+// Das muss glaub ich in die Schleife unten
+//
+//int count = 0;
+//while (*keyval_store < MAXCOUNT) {
+//*keyval_store += 1;
+//count++;
+//}
+// /* Der Vaterprozess wartet, bis alle Kindprozesse fertig sind. */
+//for (i = 0; i < NUM_OF_CHILDS; i++) {
+//waitpid(pid[i], NULL, 0);
+//}
+// /* Das Shared Memory Segment wird abgekoppelt und freigegeben. */
+//shmdt(keyval_store);
+//shmctl(id, IPC_RMID, 0);
+
+
 int main() {
     signal(SIGINT, sigintHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
 
@@ -72,7 +100,12 @@ int main() {
     //Prozessübergreiifende Initialisierung
 
     //TODO: Shared Memory und Semaphore initialisieren
-    //initCommon();
+    //Key-Value-Store initialisieren
+    int init = initKeyValStore();
+    if (init == -1) {
+        printf("Fehler beim Initialisieren des Shared Memorys.\n");
+        exit(-1);
+    }
 
     printf("Allgemeine Initialisierung abgeschlossen.\n");
 
@@ -191,7 +224,10 @@ long commandInterpreter(char *comm, int cfd) {
                     printf("PUT: Key %s wurde geändert. Alter Wert: %s, neuer Wert: %s\n", key, old_, value);
                     value = old_;
                 } else {
-                    put(key, value); //Key und Value werden in die Hashmap gespeichert
+                    if (put(key, value) == -1) { //Key und Value werden in die Hashmap gespeichert
+                        printf("PUT: Key %s konnte nicht hinzugefügt werden: Kein Speicherplatz verfügbar\n", key);
+                        bytes_sent = sendError(no_more_memory_available, cfd);
+                    }
                     printf("PUT: Key %s wurde hinzugefügt. Wert: %s\n", key, value);
                     value = get(key); //Value wird erneut aus der Hashmap geholt, um den tatsächlichen Wert zu erhalten (kann gekürzt werden)
                 }
@@ -294,6 +330,8 @@ long sendError(enum error_codes err_code, int cfd) {
             return write(cfd, "too_many_arguments\r\n", 20);
         case 4:
             return write(cfd, "too_few_arguments\r\n", 19);
+        case 5:
+            return write(cfd, "no_more_memory_available\r\n", 21);
         default:
             return write(cfd, "unknown_error\r\n", 15);
     }

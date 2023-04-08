@@ -1,6 +1,22 @@
 #ifndef PRAKBS23_KEYVALSTORE_H
 #define PRAKBS23_KEYVALSTORE_H
 
+#define LISTSIZE 500
+#define HASHMAPSIZE 500
+#define STORESIZE (HASHMAPSIZE + LISTSIZE)
+#define KEYSIZE 20
+#define VALUESIZE 50
+
+//Initialisierung des Speichers
+int initKeyValStore();
+
+//Erzeugung eines Knoten für eine Liste
+struct keyval {
+    char key[KEYSIZE];      //Schlüssel, um die Daten zu finden
+    char value[VALUESIZE];  //Daten, welche mit dem Schlüssel aufgerufen werden können
+    unsigned int nextIndex;    //Nächster Knoten einer Liste
+};
+
 //Hashcode generieren
 int generate_hashcode(char *input);
 
