@@ -73,29 +73,6 @@ void sigintHandler(int sig_num) {
     exit(0);
 }
 
-//    keyval_store = (int*)shmat(id,0,0);
-//    keyval_store = 0;
-
-//    for(i = 0; i < NUM_OF_CHILDS; i++)
-//        pid[i] = fork();
-//    //if (pid[i] == -1) {
-//printf("Kindprozess konnte nicht erzeugt werden!\n");
-//exit(1);
-//
-// Das muss glaub ich in die Schleife unten
-//
-//int count = 0;
-//while (*keyval_store < MAXCOUNT) {
-//*keyval_store += 1;
-//count++;
-//}
-// /* Der Vaterprozess wartet, bis alle Kindprozesse fertig sind. */
-//for (i = 0; i < NUM_OF_CHILDS; i++) {
-//waitpid(pid[i], NULL, 0);
-//}
-// /* Das Shared Memory Segment wird abgekoppelt und freigegeben. */
-//shmdt(keyval_store);
-//shmctl(id, IPC_RMID, 0);
 
 int main() {
     signal(SIGINT, sigintHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
