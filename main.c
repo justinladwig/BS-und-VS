@@ -14,7 +14,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <signal.h>
-#include <sys/ipc.h>
 #include <sys/shm.h>
 #include "keyValStore.h"
 #include "sub.h"
@@ -59,9 +58,16 @@ long commandInterpreter(char *comm, int cfd);
  *
  *******************************************************************************/
 
+int rfd; // Rendevouz-Descriptor
+
+int init; // Shared Memory id
+
 // Signal Handler für SIGINT
 void sigintHandler(int sig_num) {
     signal(SIGINT, sigintHandler);
+    //Detach Shared Memory
+    //shmdt(init);
+    close(rfd);
     //TODO: Shared Memory und Semaphore freigeben
     printf("SIGINT received. Release Shared Mem. and Semaphore.\n");
     exit(0);
@@ -91,7 +97,6 @@ void sigintHandler(int sig_num) {
 //shmdt(keyval_store);
 //shmctl(id, IPC_RMID, 0);
 
-
 int main() {
     signal(SIGINT, sigintHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
 
@@ -99,9 +104,9 @@ int main() {
 
     //Prozessübergreiifende Initialisierung
 
-    //TODO: Shared Memory und Semaphore initialisieren
+    //TODO: Semaphore initialisieren
     //Key-Value-Store initialisieren
-    int init = initKeyValStore();
+    init = initKeyValStore();
     if (init == -1) {
         printf("Fehler beim Initialisieren des Shared Memorys.\n");
         exit(-1);
@@ -111,8 +116,8 @@ int main() {
 
     //Initialisierung des Socket-Servers
 
-    int rfd; // Rendevouz-Descriptor
     int cfd; // Verbindungs-Descriptor
+
 
     struct sockaddr_in client; // Socketadresse eines Clients
     socklen_t client_len = sizeof(client); // Länge der Client-Daten
@@ -129,7 +134,7 @@ int main() {
     }
 
 
-    // Socket Optionen setzen für schnelles wiederholtes Binden der Adresse
+    // Socket Optionen setzen für den Fall, dass der Server nach einem Abbruch sofort wieder gestartet werden kann ohne, dass der Port noch freigegeben werden muss
     int option = 1;
     setsockopt(rfd, SOL_SOCKET, SO_REUSEADDR, (const void *) &option, sizeof(int));
 
@@ -166,35 +171,46 @@ int main() {
         }
 
         printf("Verbindung von %s:%d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
-        printf("Warten auf Kommandos von %s:%d..., QUIT beendet die Verbindung!\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-        // Lesen von Daten, die der Client schickt
-        bytes_read = read(cfd, in, BUFSIZE);
+        int pid = fork();
+        if (pid > 0) {
+            // Elternprozess
+            printf("Kindprozess mit PID %d wurde erzeugt.\n", pid);
+            close(cfd);
+            continue;
+        } else if (pid == 0) {
+            // Kindprozess
+            printf("Warten auf Kommandos von %s:%d..., QUIT beendet die Verbindung!\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-        // Interpretieren von Daten, die der Client schickt
-        while (bytes_read > 0) {
-            //Manuelle Nullterminierung des Strings
-            char *comm = malloc(BUFSIZE + 1); // +1 für Nullterminierung
-            strncpy(comm, in, bytes_read);
-            comm[bytes_read] = '\0';
+            // Lesen von Daten, die der Client schickt
+            bytes_read = read(cfd, in, BUFSIZE);
 
-            printf("%ld bytes received from %s:%d\n", bytes_read, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+            // Interpretieren von Daten, die der Client schickt
+            while (bytes_read > 0) {
+                //Manuelle Nullterminierung des Strings
+                char comm[BUFSIZE + 1]; // +1 für Nullterminierung
+                strncpy(comm, in, bytes_read);
+                comm[bytes_read] = '\0';
 
-            //Auswertung der Kommandos
-            bytes_sent = commandInterpreter(comm, cfd);
-            if (bytes_sent == -2) break; //Wenn der Client QUIT geschickt hat, wird die Verbindung beendet
+                printf("%ld bytes received from %s:%d\n", bytes_read, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-            printf("%ld bytes sent to %s:%d, waiting for next command...\n", bytes_sent, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+                //Auswertung der Kommandos
+                bytes_sent = commandInterpreter(comm, cfd);
+                if (bytes_sent == -2) break; //Wenn der Client QUIT geschickt hat, wird die Verbindung beendet
 
-            bytes_read = read(cfd, in, BUFSIZE); //Lesen von Daten, die der Client schickt
+                printf("%ld bytes sent to %s:%d, waiting for next command...\n", bytes_sent, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+
+                bytes_read = read(cfd, in, BUFSIZE); //Lesen von Daten, die der Client schickt
+            }
+            close(cfd);
+            printf("Client %s:%d disconnected.\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+            break;
+        } else {
+            // Fehler
+            fprintf(stderr, "FEHLER: Kindprozess konnte nicht erzeugt werden\n");
+            exit(-1);
         }
-        close(cfd);
-        printf("Client %s:%d disconnected.\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
     }
-
-    // Rendezvous Descriptor schließen
-    close(rfd);
-
 }
 
 long commandInterpreter(char *comm, int cfd) {
