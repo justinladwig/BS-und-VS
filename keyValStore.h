@@ -10,6 +10,9 @@
 //Initialisierung des Speichers
 int initKeyValStore();
 
+//Löschen des Speichers
+void deinitKeyValStore(int id);
+
 //Erzeugung eines Knoten für eine Liste
 struct keyval {
     char key[KEYSIZE];      //Schlüssel, um die Daten zu finden

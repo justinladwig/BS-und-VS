@@ -15,8 +15,10 @@
 #include <ctype.h>
 #include <signal.h>
 #include <sys/shm.h>
+#include <sys/wait.h>
 #include "keyValStore.h"
 #include "sub.h"
+#include "process_list.h"
 
 #define BUFSIZE 1024 // Größe des Buffers
 #define ENDLOSSCHLEIFE 1
@@ -59,29 +61,36 @@ long commandInterpreter(char *comm, int cfd);
  *******************************************************************************/
 
 int rfd; // Rendevouz-Descriptor
-
-int init; // Shared Memory id
+int init; // Initialisierung des Shared Memorys
 
 // Signal Handler für SIGINT
 void sigintHandler(int sig_num) {
-    signal(SIGINT, sigintHandler);
-    //Detach Shared Memory
-    //shmdt(init);
-    close(rfd);
-    //TODO: Shared Memory und Semaphore freigeben
     printf("SIGINT received. Release Shared Mem. and Semaphore.\n");
+    //TODO: Semaphore freigeben und Kindprozesse beenden
+    terminate_all_processes(); // Alle Kindprozesse beenden
+    deinitKeyValStore(init); // Shared Memory freigeben
+    close(rfd); // Socket schließen
     exit(0);
 }
 
+void sigchldHandler(int sig_num) {
+    pid_t pid;
+    int status;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        remove_process(pid); // Prozess aus der Liste entfernen
+        printf("Kind %d beendet.\n", pid);
+    }
+}
 
 int main() {
     signal(SIGINT, sigintHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
-
+    signal(SIGCHLD, sigchldHandler); // Wird aufgerufen, wenn ein Kindprozess beendet wird (z.B. durch exit()) und verhindert, dass der Prozess als Zombie-Prozess in der Prozessliste verbleibt
     printf("Programm wurde gestartet. (PID: %d)\n", getpid());
 
     //Prozessübergreiifende Initialisierung
 
     //TODO: Semaphore initialisieren
+
     //Key-Value-Store initialisieren
     init = initKeyValStore();
     if (init == -1) {
@@ -153,6 +162,7 @@ int main() {
         if (pid > 0) {
             // Elternprozess
             printf("Kindprozess mit PID %d wurde erzeugt.\n", pid);
+            add_process(pid); // Kindprozess zur Liste der Kindprozesse hinzufügen
             close(cfd);
             continue;
         } else if (pid == 0) {
@@ -188,6 +198,8 @@ int main() {
             exit(-1);
         }
     }
+    printf("Prozess %d wird beendet.\n", getpid());
+    return(0);
 }
 
 long commandInterpreter(char *comm, int cfd) {
@@ -283,7 +295,7 @@ long commandInterpreter(char *comm, int cfd) {
             return -2;
         }
     } else { // Befehl unbekannt
-        printf("Kommando nicht vorhanden\n");
+        printf("Kommando nicht vorhanden: %s %s %s\n", pfx, key, value);
         bytes_sent = sendError(unknown_command, cfd);
     }
     return bytes_sent;
@@ -303,7 +315,6 @@ int check_value(char *value) {
 
 char *getoutputString(char *pfx, char *key, char *value) {
     char *out = malloc(strlen(pfx) + strlen(key) + strlen(value) + 5); // 7 = 2x ":" + " " + "\r\n" + ">" + "\0"
-//    strcpy(out, "> ");
     strcpy(out, pfx);
     strcat(out, ":");
     strcat(out, key);

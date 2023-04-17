@@ -31,7 +31,13 @@ int initKeyValStore() {
         return -1;
     }
     initarray();
-    return 0;
+    return id;
+}
+
+//Löschen des Shared Memory
+void deinitKeyValStore(int id) {
+    shmdt(keyval_store);
+    shmctl(id, IPC_RMID, 0);
 }
 
 //Nächstes freies Element in der Liste finden
