@@ -61,14 +61,13 @@ long commandInterpreter(char *comm, int cfd);
  *******************************************************************************/
 
 int rfd; // Rendevouz-Descriptor
-int init; // Initialisierung des Shared Memorys
 
 // Signal Handler für SIGINT
 void sigintHandler(int sig_num) {
     printf("SIGINT received. Release Shared Mem. and Semaphore.\n");
     //TODO: Semaphore freigeben und Kindprozesse beenden
     terminate_all_processes(); // Alle Kindprozesse beenden
-    deinitKeyValStore(init); // Shared Memory freigeben
+    deinitKeyValStore(); // Shared Memory freigeben
     close(rfd); // Socket schließen
     exit(0);
 }
@@ -89,10 +88,9 @@ int main() {
 
     //Prozessübergreiifende Initialisierung
 
-    //TODO: Semaphore initialisieren
 
-    //Key-Value-Store initialisieren
-    init = initKeyValStore();
+    //Key-Value-Store initialisieren inkl. Shared Memory und Semaphore
+    int init = initKeyValStore();
     if (init == -1) {
         printf("Fehler beim Initialisieren des Shared Memorys.\n");
         exit(-1);
@@ -103,7 +101,6 @@ int main() {
     //Initialisierung des Socket-Servers
 
     int cfd; // Verbindungs-Descriptor
-
 
     struct sockaddr_in client; // Socketadresse eines Clients
     socklen_t client_len = sizeof(client); // Länge der Client-Daten
