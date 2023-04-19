@@ -73,17 +73,19 @@ int nextFreeListIndex() {
 
 //Hashcode für einen Key generieren
 //TODO: Überprüfen, dass Hashcode Größe des Arrays nicht übersteigt https://www.digitalocean.com/community/tutorials/hash-table-in-c-plus-plus
-int generate_hashcode(char *input) {
-    int output = 0;
-    for (int i = 0; i < strlen(input); i++) {
-        output += (int) input[i];
-    }
-    return output % HASHMAPSIZE; //Damit Hashmap nicht überschritten wird
+unsigned long generate_hashcode(char *input) {
+    unsigned long hash = 5381;
+    int c;
+
+    while ((c = *input++)) hash = ((hash << 5) + hash) + c;
+
+    return hash % HASHMAPSIZE;
 }
+
 
 //Funktion zum Einfügen eines Elements
 int put(char *key, char *value) {
-    int index = generate_hashcode(key); //Hashcode generieren
+    unsigned long index = generate_hashcode(key); //Hashcode generieren
     semop(semid, &enter, 1); //Semaphore sperren
     struct keyval *current = &keyval_store[index]; //Pointer auf Element mit Index des Hashcodes.
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
@@ -112,7 +114,7 @@ int put(char *key, char *value) {
 
 //Value eines Elements ändern
 int change(char *key, char *value) {
-    int index = generate_hashcode(key); //Hashcode generieren
+    unsigned long index = generate_hashcode(key); //Hashcode generieren
     semop(semid, &enter, 1); //Semaphore sperren
     struct keyval *current = &keyval_store[index]; //Pointer auf Element mit Index des Hashcodes.
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
@@ -137,7 +139,7 @@ int change(char *key, char *value) {
 
 //Funktion zum Auslesen eines Elements
 char *get(char *key) {
-    int index  = generate_hashcode(key); //Hashcode generieren
+    unsigned int index  = generate_hashcode(key); //Hashcode generieren
     semop(semid, &enter, 1); //Semaphore sperren
     struct keyval *current = &keyval_store[index]; //Pointer auf Element mit Index des Hashcodes.
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
@@ -161,7 +163,7 @@ char *get(char *key) {
 
 //Funktion zum Löschen eines Elements
 int delete(char *key) {
-    int index = generate_hashcode(key); //Hashcode generieren
+    unsigned int index = generate_hashcode(key); //Hashcode generieren
     semop(semid, &enter, 1); //Semaphore sperren
     struct keyval *current = &keyval_store[index]; //Pointer auf Element mit Index des Hashcodes.
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
@@ -228,10 +230,9 @@ int clear() {
 
 //Überprüfen, ob Key bereits vorhanden ist
 int contains(char *key) {
-    int hashcode = generate_hashcode(key);
-    int index = hashcode;
+    unsigned int hashcode = generate_hashcode(key);
     semop(semid, &enter, 1); //Semaphore sperren
-    struct keyval *current = &keyval_store[index];
+    struct keyval *current = &keyval_store[hashcode];
     //Überprüft ob Hashtabelle an Index des Hash-Werts leer ist
     if (current->key[0] == '\0') {
         semop(semid, &leave, 1); //Semaphore freigeben

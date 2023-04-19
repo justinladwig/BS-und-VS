@@ -21,7 +21,7 @@ struct keyval {
 };
 
 //Hashcode generieren
-int generate_hashcode(char *input);
+unsigned long generate_hashcode(char *input);
 
 //Funktion zum Einfügen eines Elements
 int put(char *key, char *value);

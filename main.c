@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
+#include <sys/sem.h>
 #include "keyValStore.h"
 #include "sub.h"
 #include "process_list.h"
@@ -42,7 +43,14 @@ enum error_codes {
     too_many_arguments = 3,
     too_few_arguments = 4,
     no_more_memory_available = 5,
+    no_transaction_to_end = 6,
+    transaction_already_started = 7,
     unknown_error = 5
+};
+
+enum transaction_states {
+    NOT_ACTIVE = 0,
+    ACTIVE = 1
 };
 
 /**
@@ -61,13 +69,17 @@ long commandInterpreter(char *comm, int cfd);
  *******************************************************************************/
 
 int rfd; // Rendevouz-Descriptor
+struct sembuf enter, leave;
+int transsemid;
+enum transaction_states transaction_state = NOT_ACTIVE;
+
 
 // Signal Handler für SIGINT
-void sigintHandler(int sig_num) {
-    printf("SIGINT received. Release Shared Mem. and Semaphore.\n");
-    //TODO: Semaphore freigeben und Kindprozesse beenden
+void signalHandler(int sig_num) {
+    printf("SIGINT received. Release Shared Mem. and Semaphore.\n"); n
     terminate_all_processes(); // Alle Kindprozesse beenden
     deinitKeyValStore(); // Shared Memory freigeben
+    semctl(transsemid, 0, IPC_RMID, 0);
     close(rfd); // Socket schließen
     exit(0);
 }
@@ -77,12 +89,18 @@ void sigchldHandler(int sig_num) {
     int status;
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         remove_process(pid); // Prozess aus der Liste entfernen
-        printf("Kind %d beendet.\n", pid);
+        if (WIFEXITED(status)) {
+            printf("Kindprozess mit PID %d beendet mit Status %d\n", pid, WEXITSTATUS(status));
+        } else if (WIFSIGNALED(status)) {
+            printf("Kindprozess mit PID %d wurde durch Signal %d beendet\n", pid, WTERMSIG(status));
+        }
     }
 }
 
 int main() {
-    signal(SIGINT, sigintHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
+    signal(SIGINT, signalHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
+    signal(SIGTERM, signalHandler); // Wird aufgerufen, wenn SIGTERM empfangen wird (z.B. durch kill)
+    signal(SIGQUIT, signalHandler); // Wird aufgerufen, wenn SIGQUIT empfangen wird (z.B. durch Strg+\)
     signal(SIGCHLD, sigchldHandler); // Wird aufgerufen, wenn ein Kindprozess beendet wird (z.B. durch exit()) und verhindert, dass der Prozess als Zombie-Prozess in der Prozessliste verbleibt
     printf("Programm wurde gestartet. (PID: %d)\n", getpid());
 
@@ -95,6 +113,17 @@ int main() {
         printf("Fehler beim Initialisieren des Shared Memorys.\n");
         exit(-1);
     }
+
+    //Semaphoren für Transaktionen initialisieren
+    transsemid = semget(IPC_PRIVATE, 1, IPC_CREAT | 0644);
+    if (transsemid == -1) {
+        return -1;
+    }
+    semctl(transsemid, 0, SETVAL, 1); //Semaphore auf 1 setzen
+    enter.sem_num = leave.sem_num = 0; //Semaphore 0 verwenden
+    enter.sem_flg = leave.sem_flg = SEM_UNDO; //Semaphore wieder freigeben, wenn Prozess beendet wird
+    enter.sem_op = -1; //Semaphore um 1 verringern
+    leave.sem_op = 1; //Semaphore um 1 erhöhen
 
     printf("Allgemeine Initialisierung abgeschlossen.\n");
 
@@ -208,6 +237,11 @@ long commandInterpreter(char *comm, int cfd) {
     char *key = strtok(NULL, delimiter);
     char *value = strtok(NULL, "\r\n");
 
+    if (transaction_state == NOT_ACTIVE) {
+        while (semctl(transsemid, 0, GETVAL) == 0) {
+            sleep(1);
+        }
+    }
     // Überprüfen, ob es sich bei dem Befehl um einen PUT, GET oder DEL handelt
     if (strcmp(pfx, "PUT") == 0) { // Befehl PUT
         if (key == NULL || value == NULL) { //Überprüfen, ob Key und Value angegeben wurden
@@ -283,6 +317,34 @@ long commandInterpreter(char *comm, int cfd) {
                 bytes_sent = write(cfd, out, strlen(out));
             }
         }
+    } else if (strcmp(pfx, "BEG") == 0) { // Befehl BEG
+        if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
+            printf("BEG: Zu viele Argumente angegeben\n");
+            bytes_sent = sendError(too_many_arguments, cfd);
+        } else if (transaction_state == ACTIVE) {
+            printf("BEG: Transaktion bereits gestartet");
+            bytes_sent = sendError(transaction_already_started, cfd);
+        } else {
+            printf("BEG: Transaktion beginnt\n");
+            semop(transsemid, &enter, 1);
+            transaction_state = ACTIVE;
+            char *out = "transaction_begins\r\n";
+            bytes_sent = write(cfd, out, strlen(out));
+        }
+    } else if (strcmp(pfx, "END") == 0) { // Befehl END
+        if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
+            printf("END: Zu viele Argumente angegeben\n");
+            bytes_sent = sendError(too_many_arguments, cfd);
+        } else if (transaction_state == NOT_ACTIVE) {
+            printf("Transaktion nicht gestartet!\n");
+            bytes_sent = sendError(no_transaction_to_end, cfd);
+        } else {
+            printf("END: Transaktion wird beendet\n");
+            semop(transsemid, &leave, 1);
+            transaction_state = NOT_ACTIVE;
+            char *out = "transaction_ends\r\n";
+            bytes_sent = write(cfd, out, strlen(out));
+        }
     } else if (strcmp(pfx, "QUIT") == 0) { // Befehl QUIT
         if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
             printf("QUIT: Zu viele Argumente angegeben\n");
@@ -332,7 +394,11 @@ long sendError(enum error_codes err_code, int cfd) {
         case 4:
             return write(cfd, "too_few_arguments\r\n", 19);
         case 5:
-            return write(cfd, "no_more_memory_available\r\n", 21);
+            return write(cfd, "no_more_memory_available\r\n", 26);
+        case 6:
+            return write(cfd, "no-transaction_to_end\r\n", 25);
+        case 7:
+            return write(cfd, "transaction_already_started\r\n", 29);
         default:
             return write(cfd, "unknown_error\r\n", 15);
     }
