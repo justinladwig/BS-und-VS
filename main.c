@@ -76,7 +76,7 @@ enum transaction_states transaction_state = NOT_ACTIVE;
 
 // Signal Handler für SIGINT
 void signalHandler(int sig_num) {
-    printf("SIGINT received. Release Shared Mem. and Semaphore.\n"); n
+    printf("SIGINT received. Release Shared Mem. and Semaphore.\n");
     terminate_all_processes(); // Alle Kindprozesse beenden
     deinitKeyValStore(); // Shared Memory freigeben
     semctl(transsemid, 0, IPC_RMID, 0);
