@@ -72,14 +72,20 @@ int rfd; // Rendevouz-Descriptor
 struct sembuf enter, leave;
 int transsemid;
 enum transaction_states transaction_state = NOT_ACTIVE;
+pid_t childPID = 0;
 
 
 // Signal Handler für SIGINT
 void signalHandler(int sig_num) {
     printf("SIGINT received. Release Shared Mem. and Semaphore.\n");
     terminate_all_processes(); // Alle Kindprozesse beenden
+    printf("All child processes terminated.\n");
     deinitKeyValStore(); // Shared Memory freigeben
+    printf("KeyVal released.\n");
+    deinitSubStore(); // Shared Memory freigeben
+    printf("Substore released.\n");
     semctl(transsemid, 0, IPC_RMID, 0);
+    printf("Transaction Semaphore released.\n");
     close(rfd); // Socket schließen
     exit(0);
 }
@@ -110,6 +116,12 @@ int main() {
     //Key-Value-Store initialisieren inkl. Shared Memory und Semaphore
     int init = initKeyValStore();
     if (init == -1) {
+        printf("Fehler beim Initialisieren des Shared Memorys.\n");
+        exit(-1);
+    }
+
+    int subinit = initSubStore();
+    if (subinit == -1) {
         printf("Fehler beim Initialisieren des Shared Memorys.\n");
         exit(-1);
     }
@@ -184,7 +196,7 @@ int main() {
 
         printf("Verbindung von %s:%d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-        int pid = fork();
+        pid_t pid = fork();
         if (pid > 0) {
             // Elternprozess
             printf("Kindprozess mit PID %d wurde erzeugt.\n", pid);
@@ -193,6 +205,7 @@ int main() {
             continue;
         } else if (pid == 0) {
             // Kindprozess
+            childPID = getpid();
             printf("Warten auf Kommandos von %s:%d..., QUIT beendet die Verbindung!\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
             // Lesen von Daten, die der Client schickt
@@ -229,13 +242,17 @@ int main() {
 }
 
 long commandInterpreter(char *comm, int cfd) {
-    long bytes_sent; // Anzahl der Bytes, die der Server an den Client geschickt hat
+    long bytes_sent = 0; // Anzahl der Bytes, die der Server an den Client geschickt hat
 
     // Befehl in einzelne Teile zerlegen
     char delimiter[] = " \r\n"; //Telnet schickt \r\n als Zeilenumbruch
     char *pfx = strtok(comm, delimiter);
     char *key = strtok(NULL, delimiter);
     char *value = strtok(NULL, "\r\n");
+
+    if (pfx == NULL) {
+        return bytes_sent;
+    }
 
     if (transaction_state == NOT_ACTIVE) {
         while (semctl(transsemid, 0, GETVAL) == 0) {
@@ -336,7 +353,7 @@ long commandInterpreter(char *comm, int cfd) {
             printf("END: Zu viele Argumente angegeben\n");
             bytes_sent = sendError(too_many_arguments, cfd);
         } else if (transaction_state == NOT_ACTIVE) {
-            printf("Transaktion nicht gestartet!\n");
+            printf("END: Transaktion nicht gestartet!\n");
             bytes_sent = sendError(no_transaction_to_end, cfd);
         } else {
             printf("END: Transaktion wird beendet\n");
@@ -352,6 +369,32 @@ long commandInterpreter(char *comm, int cfd) {
         } else {
             printf("QUIT: Verbindung wird beendet\n");
             return -2;
+        }
+    } else if (strcmp(pfx, "SUB") == 0) { // Befehl SUB
+        if (value != NULL) { //Überprüfen, dass kein Value angegeben wurde
+            printf("SUB: Zu viele Argumente angegeben\n");
+            bytes_sent = sendError(too_many_arguments, cfd);
+        } else if (key == NULL) { //Überprüfen, dass ein Key angegeben wurde
+            printf("SUB: Zu wenige Argumente angegeben\n");
+            bytes_sent = sendError(too_few_arguments, cfd);
+        } else {
+            if (check_value(key) != 0) { //Überprüfen, dass Key nur alphanumerische Zeichen und keine Leerzeichen enthält
+                printf("SUB: Key enthält nicht alphanumerische Zeichen\n");
+                bytes_sent = sendError(not_alphanumeric, cfd);
+            } else {
+                value = get(key);
+                if (value == NULL) { //Key wird mit PID zu der SUB-Hashmap hinzugefügt;
+                    printf("SUB: Key nicht vorhanden\n");
+                    value = "key_nonexistent";
+                } else if (subContains(key, childPID) == 1) {
+                    printf("SUB: Key %s und PID %i bereits Abboniert\n", key, childPID);
+                } else {
+                    printf("SUB: Key %s, PID: %i\n", key, childPID);
+                    subPut(key, childPID);
+                }
+                char *out = getoutputString(pfx, key, value);
+                bytes_sent = write(cfd, out, strlen(out));
+            }
         }
     } else { // Befehl unbekannt
         printf("Kommando nicht vorhanden: %s %s %s\n", pfx, key, value);
