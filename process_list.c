@@ -42,7 +42,7 @@ void remove_process(pid_t pid) {
     }
 }
 
-void terminate_all_processes() {
+int terminate_all_processes() {
     ProcessNode* current = process_list;
     while (current != NULL) {
         //TODO: Problem: Nicht alle Prozesse werden beendet

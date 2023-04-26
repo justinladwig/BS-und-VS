@@ -1,10 +1,11 @@
 /*
  * 1. Standard Variable = aus
- * 2. Mit einer Variable kann sich ein Client für den Pub/Sub eines bestimmten Keys "anmelden" (Variable gesetzt)
+ * 2. Mit einer Variable kann sich ein Client für den Pub/Sub "anmelden" (Variable gesetzt)
  * 3. Bei Änderungen wird mit IF abgefragt, ob man eine Nachricht bekommen möchte
  * 4. Nachricht wird ausgegeben
  * 5. In diesem Prozess werden die anderen Clients nicht blockiert, sie bekommen nur ne Nachricht
  */
+
 #include <sys/shm.h>
 #include <sys/sem.h>
 #include <stdlib.h>
@@ -200,8 +201,103 @@ int subDelete(char *key, pid_t pid) {
 }
 
 //TODO: Funktion zum Löschen aller Elemente eines Prozesses, falls ein Prozess beendet wird
+int subClearProcess(pid_t pid){
+    semop(subsemid, &enter, 1); //Semaphore sperren
+    for (int i = 0; i < HASHMAPSIZE; i++) {
+        struct subscription *current = &subscription_store[i];
+        //Falls leer
+        if (current->key[0] == '\0') {
+            semop(subsemid, &leave, 1); //Semaphore freigeben
+            return -1;
+        }
+        //Überprüfen, ob erstes Element gelöscht werden soll
+        while (current->processid == pid) {
+            if (current->nextIndex == 0) { //Überprüft, ob es das einzige Element ist
+                current->key[0] = '\0';
+                current->processid = 0;
+                current->nextIndex = 0;
+                break; //Element erfolgreich gelöscht
+            } else {
+                strncpy(current->key, subscription_store[current->nextIndex].key, KEYSIZE); //Übernimmt den Key des nächsten Elements
+                current->processid = subscription_store[current->nextIndex].processid; //Übernimmt den Value des nächsten Elements
+                unsigned int temp = current->nextIndex;
+                current->nextIndex =subscription_store[current->nextIndex].nextIndex; //Übernimmt den Index des nächsten Elements
+                subscription_store[temp].key[0] = '\0'; //Löscht das nächste Element, nachdem es kopiert wurde
+                subscription_store[temp].processid = 0;
+                subscription_store[temp].nextIndex = 0;
+            }
+        }
+        //Falls erstes Element nicht gelöscht werden soll, Verkettung anwenden, um Element zu finden
+        while (current->nextIndex != 0) {
+            if (subscription_store[current->nextIndex].processid == pid) {
+                unsigned int temp = current->nextIndex;
+                if (subscription_store[current->nextIndex].nextIndex == 0) { //Überprüft, ob es das letzte Element ist
+                    current->nextIndex = 0;
+                    subscription_store[temp].key[0] = '\0';
+                    subscription_store[temp].processid = 0;
+                    subscription_store[temp].nextIndex = 0;
+                    break; //Element erfolgreich gelöscht
+                }
+                current->nextIndex = subscription_store[current->nextIndex].nextIndex; //Übernimmt den Index des nächsten Elements
+                subscription_store[temp].key[0] = '\0'; //Löscht das nächste Element, nachdem der Index kopiert wurde
+                subscription_store[temp].processid = 0;
+                subscription_store[temp].nextIndex = 0;
+            }
+            current = &subscription_store[current->nextIndex];
+        }
+    }
+    semop(subsemid, &leave, 1); //Semaphore freigeben
+    return 0;
+}
 
-//TODO: Funtion zum Löschen aller Elemente eines Keys, falls ein Key gelöscht wird
+//Funktion zum Löschen aller Elemente eines Keys, falls ein Key gelöscht wird
+int subClearKey(char *key){
+    unsigned int index = subgenerate_hashcode(key); //Hashcode generieren
+    semop(subsemid, &enter, 1); //Semaphore sperren
+    struct subscription *current = &subscription_store[index];
+    //Falls leer
+    if (current->key[0] == '\0') {
+        semop(subsemid, &leave, 1); //Semaphore freigeben
+        return -1;
+    }
+    //Überprüfen, ob erstes Element gelöscht werden soll
+    while (strcmp(current->key, key) == 0) {
+        if (current->nextIndex == 0) { //Überprüft, ob es das einzige Element ist
+            current->key[0] = '\0';
+            current->processid = 0;
+            current->nextIndex = 0;
+            break; //Element erfolgreich gelöscht
+        } else {
+            strncpy(current->key, subscription_store[current->nextIndex].key, KEYSIZE); //Übernimmt den Key des nächsten Elements
+            current->processid = subscription_store[current->nextIndex].processid; //Übernimmt den Value des nächsten Elements
+            unsigned int temp = current->nextIndex;
+            current->nextIndex =subscription_store[current->nextIndex].nextIndex; //Übernimmt den Index des nächsten Elements
+            subscription_store[temp].key[0] = '\0'; //Löscht das nächste Element, nachdem es kopiert wurde
+            subscription_store[temp].processid = 0;
+            subscription_store[temp].nextIndex = 0;
+        }
+    }
+    //Falls erstes Element nicht gelöscht werden soll, Verkettung anwenden, um Element zu finden
+    while (current->nextIndex != 0) {
+        if (strcmp(subscription_store[current->nextIndex].key, key) == 0) {
+            unsigned int temp = current->nextIndex;
+            if (subscription_store[current->nextIndex].nextIndex == 0) { //Überprüft, ob es das letzte Element ist
+                current->nextIndex = 0;
+                subscription_store[temp].key[0] = '\0';
+                subscription_store[temp].processid = 0;
+                subscription_store[temp].nextIndex = 0;
+                break; //Element erfolgreich gelöscht
+            }
+            current->nextIndex = subscription_store[current->nextIndex].nextIndex; //Übernimmt den Index des nächsten Elements
+            subscription_store[temp].key[0] = '\0'; //Löscht das nächste Element, nachdem der Index kopiert wurde
+            subscription_store[temp].processid = 0;
+            subscription_store[temp].nextIndex = 0;
+        }
+        current = &subscription_store[current->nextIndex];
+    }
+    semop(subsemid, &leave, 1); //Semaphore freigeben
+    return 0;
+}
 
 //Funktion zum Löschen aller Elemente
 int subClear() {

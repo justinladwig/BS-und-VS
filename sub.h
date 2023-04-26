@@ -17,4 +17,8 @@ int subGet(char *key, pid_t *pidarr, int size);
 
 int subPut(char *key, pid_t value);
 
+int subClearKey(char *key);
+
+int subClearProcess(pid_t pid);
+
 #endif //PRAKBS23_SUB_H

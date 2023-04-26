@@ -17,7 +17,7 @@
 #include <sys/wait.h>
 #include <sys/sem.h>
 #include <sys/msg.h>
-#include <errno.h>
+#include <sys/errno.h>
 #include "keyValStore.h"
 #include "sub.h"
 #include "process_list.h"
@@ -100,6 +100,33 @@ void signalHandler(int sig_num) {
     printf("Message Queue released.\n");
     close(rfd); // Socket schließen
     exit(0);
+}
+
+void childSignalHandler(int sig_num){
+    fprintf(stderr, "Signal %d recieved.\n", sig_num);
+
+    // Kindprozesse beenden
+    if( terminate_all_processes() == -1 ){ //ToDo: Return for function terminate_all_processes()
+        fprintf(stderr, "Error terminating child process: %s\n", strerror(errno));
+    } else {
+        fprintf(stderr, "All child processes terminated.\n");
+    }
+
+    // Shared memory freigeben
+    if( deinitKeyValStore() == -1 ){
+        fprintf(stderr, "Error releasing KeyVal: %s\n", strerror(errno));
+    } else {
+        fprintf(stderr, "KeyVal released.\n");
+    }
+
+    if( deinitSubStore() == -1 ){
+        fprintf(stderr, "Error releasing Substore: %s\n", strerror(errno));
+    } else {
+        fprintf(stderr, "Substore released.\n");
+    }
+
+    // Freigabe Semaphore
+    if(semctl(transsemid, 0, IPC_RMID))
 }
 
 void sigchldHandler(int sig_num) {
@@ -223,6 +250,7 @@ int main() {
             continue;
         } else if (pid == 0) {
             // Kindprozess
+            signal(SIGCHLD, SIG_IGN);
             socketChildPID = getpid();
 
             //Subscription-Lauscher Kind erstellen
@@ -239,7 +267,6 @@ int main() {
             } else if (subpid > 0) {
                 //Elternprozess
                 printf("Kindprozess (Sub) mit PID %d wurde erzeugt\n", subpid);
-                add_process(subpid);
 
                 printf("Warten auf Kommandos von %s:%d..., QUIT beendet die Verbindung!\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
@@ -380,7 +407,7 @@ long commandInterpreter(char *comm, int cfd) {
                 printf("DEL: Key %s, Wert: %s\n", key, value);
                 bytes_sent = write(cfd, out, strlen(out));
                 sendSubMessage(out, key); //Subscription-Message wird gesendet
-                //TODO: Alle Subscriptions mit diesem Key löschen
+                subClearKey(key);
             }
         }
     } else if (strcmp(pfx, "BEG") == 0) { // Befehl BEG
