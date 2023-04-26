@@ -17,6 +17,4 @@ int subGet(char *key, pid_t *pidarr, int size);
 
 int subPut(char *key, pid_t value);
 
-
-
 #endif //PRAKBS23_SUB_H

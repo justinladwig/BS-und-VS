@@ -1,7 +1,6 @@
 /*******************************************************************************
  
-  Ein TCP-Echo-Server als iterativer Server: Der Server schickt einfach die
-  Daten, die der Client schickt, an den Client zurück.
+  Server für Key-Value-Store
  
 *******************************************************************************/
 
@@ -17,6 +16,8 @@
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <sys/sem.h>
+#include <sys/msg.h>
+#include <errno.h>
 #include "keyValStore.h"
 #include "sub.h"
 #include "process_list.h"
@@ -64,20 +65,29 @@ long sendError(enum error_codes err_code, int cfd);
 //Auswertung der Kommandos. Gibt die Anzahl der gesendeten Bytes zurück oder -2 bei QUIT oder -1 bei Fehler
 long commandInterpreter(char *comm, int cfd);
 
+//Funktion zum Senden von Subscription-Messages an alle Clients die den Key abonniert haben
+void sendSubMessage(char *mtext, char *key);
+
 /*******************************************************************************
  *
  *******************************************************************************/
 
 int rfd; // Rendevouz-Descriptor
-struct sembuf enter, leave;
+int msgqueue;
 int transsemid;
+struct sembuf enter, leave;
 enum transaction_states transaction_state = NOT_ACTIVE;
-pid_t childPID = 0;
+pid_t socketChildPID = 0;
+
+struct subscription_msg {
+    long mtype;
+    char mtext[KEYSIZE + VALUESIZE + 30];
+};
 
 
 // Signal Handler für SIGINT
 void signalHandler(int sig_num) {
-    printf("SIGINT received. Release Shared Mem. and Semaphore.\n");
+    printf("SIGNAL received. Release Shared Mem. and Semaphore.\n");
     terminate_all_processes(); // Alle Kindprozesse beenden
     printf("All child processes terminated.\n");
     deinitKeyValStore(); // Shared Memory freigeben
@@ -86,6 +96,8 @@ void signalHandler(int sig_num) {
     printf("Substore released.\n");
     semctl(transsemid, 0, IPC_RMID, 0);
     printf("Transaction Semaphore released.\n");
+    msgctl(msgqueue, IPC_RMID, 0);
+    printf("Message Queue released.\n");
     close(rfd); // Socket schließen
     exit(0);
 }
@@ -105,7 +117,7 @@ void sigchldHandler(int sig_num) {
 
 int main() {
     signal(SIGINT, signalHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
-    signal(SIGTERM, signalHandler); // Wird aufgerufen, wenn SIGTERM empfangen wird (z.B. durch kill)
+    // signal(SIGTERM, signalHandler); // Wird aufgerufen, wenn SIGTERM empfangen wird (z.B. durch kill)
     signal(SIGQUIT, signalHandler); // Wird aufgerufen, wenn SIGQUIT empfangen wird (z.B. durch Strg+\)
     signal(SIGCHLD, sigchldHandler); // Wird aufgerufen, wenn ein Kindprozess beendet wird (z.B. durch exit()) und verhindert, dass der Prozess als Zombie-Prozess in der Prozessliste verbleibt
     printf("Programm wurde gestartet. (PID: %d)\n", getpid());
@@ -136,6 +148,12 @@ int main() {
     enter.sem_flg = leave.sem_flg = SEM_UNDO; //Semaphore wieder freigeben, wenn Prozess beendet wird
     enter.sem_op = -1; //Semaphore um 1 verringern
     leave.sem_op = 1; //Semaphore um 1 erhöhen
+
+    //Message Queue initialisieren für Abbonements
+    msgqueue = msgget(IPC_PRIVATE, IPC_CREAT | 0644);
+    if (msgqueue == -1) {
+        return -1;
+    }
 
     printf("Allgemeine Initialisierung abgeschlossen.\n");
 
@@ -205,32 +223,57 @@ int main() {
             continue;
         } else if (pid == 0) {
             // Kindprozess
-            childPID = getpid();
-            printf("Warten auf Kommandos von %s:%d..., QUIT beendet die Verbindung!\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+            socketChildPID = getpid();
 
-            // Lesen von Daten, die der Client schickt
-            bytes_read = read(cfd, in, BUFSIZE);
+            //Subscription-Lauscher Kind erstellen
+            //TODO: Kind vernünftig beenden
+            pid_t subpid = fork();
+            if (subpid == 0) {
+                //Kindprozess
+                struct subscription_msg msg;
+                while(1) {
+                    msgrcv(msgqueue, &msg , sizeof(msg.mtext), socketChildPID, MSG_NOERROR);
+                    send(cfd, msg.mtext, strlen(msg.mtext), 0);
+                    printf("Subscription Update erhalten: %s gesendet", msg.mtext);
+                }
+            } else if (subpid > 0) {
+                //Elternprozess
+                printf("Kindprozess (Sub) mit PID %d wurde erzeugt\n", subpid);
+                add_process(subpid);
 
-            // Interpretieren von Daten, die der Client schickt
-            while (bytes_read > 0) {
-                //Manuelle Nullterminierung des Strings
-                char comm[BUFSIZE + 1]; // +1 für Nullterminierung
-                strncpy(comm, in, bytes_read);
-                comm[bytes_read] = '\0';
+                printf("Warten auf Kommandos von %s:%d..., QUIT beendet die Verbindung!\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-                printf("%ld bytes received from %s:%d\n", bytes_read, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+                // Lesen von Daten, die der Client schickt
+                bytes_read = read(cfd, in, BUFSIZE);
 
-                //Auswertung der Kommandos
-                bytes_sent = commandInterpreter(comm, cfd);
-                if (bytes_sent == -2) break; //Wenn der Client QUIT geschickt hat, wird die Verbindung beendet
+                // Interpretieren von Daten, die der Client schickt
+                while (bytes_read > 0) {
+                    //Manuelle Nullterminierung des Strings
+                    char comm[BUFSIZE + 1]; // +1 für Nullterminierung
+                    strncpy(comm, in, bytes_read);
+                    comm[bytes_read] = '\0';
 
-                printf("%ld bytes sent to %s:%d, waiting for next command...\n", bytes_sent, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+                    printf("%ld bytes received from %s:%d\n", bytes_read, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-                bytes_read = read(cfd, in, BUFSIZE); //Lesen von Daten, die der Client schickt
+                    //Auswertung der Kommandos
+                    bytes_sent = commandInterpreter(comm, cfd);
+                    if (bytes_sent == -2) break; //Wenn der Client QUIT geschickt hat, wird die Verbindung beendet
+
+                    printf("%ld bytes sent to %s:%d, waiting for next command...\n", bytes_sent, inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+
+                    bytes_read = read(cfd, in, BUFSIZE); //Lesen von Daten, die der Client schickt
+                }
+                close(cfd);
+                printf("Client %s:%d disconnected.\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+
+                kill(subpid, SIGTERM); //Subscription-Prozess beenden
+                printf("Subscriber Prozess beendet!\n");
+                break;
+            } else {
+                // Fehler
+                fprintf(stderr, "FEHLER: Subscriberprozess konnte nicht erzeugt werden\n");
+                exit(-1);
             }
-            close(cfd);
-            printf("Client %s:%d disconnected.\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
-            break;
         } else {
             // Fehler
             fprintf(stderr, "FEHLER: Kindprozess konnte nicht erzeugt werden\n");
@@ -254,6 +297,7 @@ long commandInterpreter(char *comm, int cfd) {
         return bytes_sent;
     }
 
+    //TODO: Schöner machen!? Wie?
     if (transaction_state == NOT_ACTIVE) {
         while (semctl(transsemid, 0, GETVAL) == 0) {
             sleep(1);
@@ -275,17 +319,20 @@ long commandInterpreter(char *comm, int cfd) {
                     strcpy(old_,OldGet); //Alten Wert in einen neuen String kopieren, da dieser sonst überschrieben wird
                     change(key, value); //Value wird geändert
                     printf("PUT: Key %s wurde geändert. Alter Wert: %s, neuer Wert: %s\n", key, old_, value);
-                    value = old_;
+                    char *out = getoutputString(pfx, key, old_);
+                    bytes_sent = write(cfd, out, strlen(out));
+                    sendSubMessage(getoutputString(pfx, key, value), key); //Subscription-Message wird gesendet
                 } else {
                     if (put(key, value) == -1) { //Key und Value werden in die Hashmap gespeichert
                         printf("PUT: Key %s konnte nicht hinzugefügt werden: Kein Speicherplatz verfügbar\n", key);
                         bytes_sent = sendError(no_more_memory_available, cfd);
+                    } else {
+                        printf("PUT: Key %s wurde hinzugefügt. Wert: %s\n", key, value);
+                        value = get(key); //Value wird erneut aus der Hashmap geholt, um den tatsächlichen Wert zu erhalten (kann gekürzt werden)
+                        char *out = getoutputString(pfx, key, value);
+                        bytes_sent = write(cfd, out, strlen(out));
                     }
-                    printf("PUT: Key %s wurde hinzugefügt. Wert: %s\n", key, value);
-                    value = get(key); //Value wird erneut aus der Hashmap geholt, um den tatsächlichen Wert zu erhalten (kann gekürzt werden)
                 }
-                char *out = getoutputString(pfx, key, value);
-                bytes_sent = write(cfd, out, strlen(out));
             }
         }
     } else if (strcmp(pfx, "GET") == 0) { // Befehl GET
@@ -332,6 +379,8 @@ long commandInterpreter(char *comm, int cfd) {
                 char *out = getoutputString(pfx, key, value);
                 printf("DEL: Key %s, Wert: %s\n", key, value);
                 bytes_sent = write(cfd, out, strlen(out));
+                sendSubMessage(out, key); //Subscription-Message wird gesendet
+                //TODO: Alle Subscriptions mit diesem Key löschen
             }
         }
     } else if (strcmp(pfx, "BEG") == 0) { // Befehl BEG
@@ -386,11 +435,11 @@ long commandInterpreter(char *comm, int cfd) {
                 if (value == NULL) { //Key wird mit PID zu der SUB-Hashmap hinzugefügt;
                     printf("SUB: Key nicht vorhanden\n");
                     value = "key_nonexistent";
-                } else if (subContains(key, childPID) == 1) {
-                    printf("SUB: Key %s und PID %i bereits Abboniert\n", key, childPID);
+                } else if (subContains(key, socketChildPID) == 1) {
+                    printf("SUB: Key %s und PID %i bereits Abboniert\n", key, socketChildPID);
                 } else {
-                    printf("SUB: Key %s, PID: %i\n", key, childPID);
-                    subPut(key, childPID);
+                    printf("SUB: Key %s, PID: %i\n", key, socketChildPID);
+                    subPut(key, socketChildPID);
                 }
                 char *out = getoutputString(pfx, key, value);
                 bytes_sent = write(cfd, out, strlen(out));
@@ -445,5 +494,19 @@ long sendError(enum error_codes err_code, int cfd) {
         default:
             return write(cfd, "unknown_error\r\n", 15);
     }
-    return -1;
+}
+
+void sendSubMessage(char *mtext, char *key) {
+    struct subscription_msg msg;
+    strcpy(msg.mtext, mtext);
+    pid_t pidarr[100];
+    int size = subGet(key, pidarr, 100);
+    for (int i = 0; i < size; i++) {
+        if (pidarr[i] != socketChildPID) {
+            msg.mtype = pidarr[i];
+            if (msgsnd(msgqueue, &msg, sizeof(msg.mtext), 0) == -1) {
+                perror("msgsnd");
+            }
+        }
+    }
 }

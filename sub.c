@@ -199,6 +199,10 @@ int subDelete(char *key, pid_t pid) {
     return -1;
 }
 
+//TODO: Funktion zum Löschen aller Elemente eines Prozesses, falls ein Prozess beendet wird
+
+//TODO: Funtion zum Löschen aller Elemente eines Keys, falls ein Key gelöscht wird
+
 //Funktion zum Löschen aller Elemente
 int subClear() {
     semop(subsemid, &enter, 1); //Semaphore sperren
