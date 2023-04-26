@@ -65,13 +65,20 @@ int initSubStore() {
 }
 
 //Löschen des Shared Memory
-void deinitSubStore() {
+int deinitSubStore() {
     //Shared Memory löschen
-    shmdt(subscription_store);
-    shmctl(subshmid, IPC_RMID, 0);
+    if (shmdt(subscription_store) == -1) {
+        return -1;
+    }
+    if (shmctl(subshmid, IPC_RMID, 0) == -1) {
+        return -1;
+    }
 
     //Semaphore löschen
-    semctl(subsemid, 0, IPC_RMID, 0);
+    if (semctl(subsemid, 0, IPC_RMID, 0) == -1) {
+        return -1;
+    }
+    return 0;
 }
 
 //Nächstes freies Element in der Liste finden

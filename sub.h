@@ -9,7 +9,7 @@
 //Initialisierung von Subscribe
 int initSubStore();
 
-void deinitSubStore();
+int deinitSubStore();
 
 int subContains(char *key, pid_t pid);
 

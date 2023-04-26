@@ -78,6 +78,7 @@ int transsemid;
 struct sembuf enter, leave;
 enum transaction_states transaction_state = NOT_ACTIVE;
 pid_t socketChildPID = 0;
+pid_t subpid = 0;
 
 struct subscription_msg {
     long mtype;
@@ -85,28 +86,11 @@ struct subscription_msg {
 };
 
 
-// Signal Handler für SIGINT
-void signalHandler(int sig_num) {
-    printf("SIGNAL received. Release Shared Mem. and Semaphore.\n");
-    terminate_all_processes(); // Alle Kindprozesse beenden
-    printf("All child processes terminated.\n");
-    deinitKeyValStore(); // Shared Memory freigeben
-    printf("KeyVal released.\n");
-    deinitSubStore(); // Shared Memory freigeben
-    printf("Substore released.\n");
-    semctl(transsemid, 0, IPC_RMID, 0);
-    printf("Transaction Semaphore released.\n");
-    msgctl(msgqueue, IPC_RMID, 0);
-    printf("Message Queue released.\n");
-    close(rfd); // Socket schließen
-    exit(0);
-}
-
-void childSignalHandler(int sig_num){
+void sigSystemHandler(int sig_num){
     fprintf(stderr, "Signal %d recieved.\n", sig_num);
 
     // Kindprozesse beenden
-    if( terminate_all_processes() == -1 ){ //ToDo: Return for function terminate_all_processes()
+    if( terminate_all_processes() == -1 ){
         fprintf(stderr, "Error terminating child process: %s\n", strerror(errno));
     } else {
         fprintf(stderr, "All child processes terminated.\n");
@@ -126,10 +110,28 @@ void childSignalHandler(int sig_num){
     }
 
     // Freigabe Semaphore
-    if(semctl(transsemid, 0, IPC_RMID))
+    if( semctl(transsemid, 0, IPC_RMID, 0) == -1 ) {
+        fprintf(stderr, "Error releasing Transaction Semaphore: %s\n", strerror(errno));
+    } else {
+        fprintf(stderr, "Transaction Semaphore released.\n");
+    }
+
+    // Freigabe Message Queue
+    if( msgctl(msgqueue, IPC_RMID, 0) == -1 ){
+        fprintf(stderr, "Error releasing Message Queue: %s\n", strerror(errno));
+    } else {
+        fprintf(stderr, "Message Queue released.\n");
+    }
+
+    // Schließen des Sockets
+    if(close(rfd) == -1){
+        fprintf(stderr, "Error closing socket: %s\n", strerror(errno));
+    }
+    // Beenden des Programms
+    exit(0);
 }
 
-void sigchldHandler(int sig_num) {
+void sigSIGCHLDHandler(int sig_num) {
     pid_t pid;
     int status;
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
@@ -142,11 +144,17 @@ void sigchldHandler(int sig_num) {
     }
 }
 
+void sigSubChildTerminateHandler (int sig_num){
+    if (kill(subpid, SIGTERM) == -1) {
+        fprintf(stderr, "Error killing child process: %s\n", strerror(errno));
+    }
+}
+
 int main() {
-    signal(SIGINT, signalHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
+    signal(SIGINT, sigSystemHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
     // signal(SIGTERM, signalHandler); // Wird aufgerufen, wenn SIGTERM empfangen wird (z.B. durch kill)
-    signal(SIGQUIT, signalHandler); // Wird aufgerufen, wenn SIGQUIT empfangen wird (z.B. durch Strg+\)
-    signal(SIGCHLD, sigchldHandler); // Wird aufgerufen, wenn ein Kindprozess beendet wird (z.B. durch exit()) und verhindert, dass der Prozess als Zombie-Prozess in der Prozessliste verbleibt
+    signal(SIGQUIT, sigSystemHandler); // Wird aufgerufen, wenn SIGQUIT empfangen wird (z.B. durch Strg+\)
+    signal(SIGCHLD, sigSIGCHLDHandler); // Wird aufgerufen, wenn ein Kindprozess beendet wird (z.B. durch exit()) und verhindert, dass der Prozess als Zombie-Prozess in der Prozessliste verbleibt
     printf("Programm wurde gestartet. (PID: %d)\n", getpid());
 
     //Prozessübergreiifende Initialisierung
@@ -251,13 +259,15 @@ int main() {
         } else if (pid == 0) {
             // Kindprozess
             signal(SIGCHLD, SIG_IGN);
+            signal(SIGTERM, sigSubChildTerminateHandler);
             socketChildPID = getpid();
 
             //Subscription-Lauscher Kind erstellen
             //TODO: Kind vernünftig beenden
-            pid_t subpid = fork();
+            subpid = fork();
             if (subpid == 0) {
                 //Kindprozess
+                signal(SIGTERM, SIG_DFL);
                 struct subscription_msg msg;
                 while(1) {
                     msgrcv(msgqueue, &msg , sizeof(msg.mtext), socketChildPID, MSG_NOERROR);
@@ -293,7 +303,7 @@ int main() {
                 close(cfd);
                 printf("Client %s:%d disconnected.\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-                kill(subpid, SIGTERM); //Subscription-Prozess beenden
+                sigSubChildTerminateHandler(SIGTERM); //Kindprozess beenden
                 printf("Subscriber Prozess beendet!\n");
                 break;
             } else {

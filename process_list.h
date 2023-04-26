@@ -7,6 +7,6 @@ void add_process(pid_t pid);
 
 void remove_process(pid_t pid);
 
-void terminate_all_processes();
+int terminate_all_processes();
 
 #endif //PRAKBS23_PROCESS_LIST_H

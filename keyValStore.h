@@ -11,7 +11,7 @@
 int initKeyValStore();
 
 //Löschen des Speichers
-void deinitKeyValStore();
+int deinitKeyValStore();
 
 //Erzeugung eines Knoten für eine Liste
 struct keyval {

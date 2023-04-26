@@ -46,8 +46,12 @@ int terminate_all_processes() {
     ProcessNode* current = process_list;
     while (current != NULL) {
         //TODO: Problem: Nicht alle Prozesse werden beendet
-        kill(current->pid, SIGTERM); // Prozess beenden
+        if (kill(current->pid, SIGTERM) == -1) {
+            perror("kill");
+            return -1;
+        }
         printf("Terminated process with PID %d\n", current->pid);
         current = current->next;
     }
+    return 0;
 }

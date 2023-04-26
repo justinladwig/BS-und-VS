@@ -52,13 +52,19 @@ int initKeyValStore() {
 }
 
 //Löschen des Shared Memory
-void deinitKeyValStore() {
+int deinitKeyValStore() {
     //Shared Memory löschen
-    shmdt(keyval_store);
-    shmctl(shmid, IPC_RMID, 0);
-
+    if (shmdt(keyval_store) == -1) {
+        return -1;
+    }
+    if (shmctl(shmid, IPC_RMID, 0) == -1) {
+        return -1;
+    }
     //Semaphore löschen
-    semctl(semid, 0, IPC_RMID, 0);
+    if (semctl(semid, 0, IPC_RMID, 0) == -1) {
+        return -1;
+    }
+    return 0;
 }
 
 //Nächstes freies Element in der Liste finden
