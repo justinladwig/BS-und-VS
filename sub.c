@@ -1,10 +1,3 @@
-/*
- * 1. Standard Variable = aus
- * 2. Mit einer Variable kann sich ein Client für den Pub/Sub "anmelden" (Variable gesetzt)
- * 3. Bei Änderungen wird mit IF abgefragt, ob man eine Nachricht bekommen möchte
- * 4. Nachricht wird ausgegeben
- * 5. In diesem Prozess werden die anderen Clients nicht blockiert, sie bekommen nur ne Nachricht
- */
 
 #include <sys/shm.h>
 #include <sys/sem.h>
@@ -35,7 +28,7 @@ void subinitarray() {
         subscription_store[i].nextIndex = 0;
     }
 }
-
+//SubStore mit Shared Memory und Semaphore initialisieren
 int initSubStore() {
     //Shared Memory anlegen
     int segsize = sizeof(struct subscription) * STORESIZE;

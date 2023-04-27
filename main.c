@@ -38,6 +38,7 @@ int check_value(char *value);
 //Ausgabe im Format "> pfx:key:value\r\n"
 char *getoutputString(char *pfx, char *key, char *value);
 
+//Aufzählung von Fehlercodes
 enum error_codes {
     not_alphanumeric = 1,
     unknown_command = 2,
@@ -49,6 +50,7 @@ enum error_codes {
     unknown_error = 5
 };
 
+//Status, ob eine Transaktion ausgeführt wird
 enum transaction_states {
     NOT_ACTIVE = 0,
     ACTIVE = 1
@@ -170,7 +172,7 @@ int main() {
         printf("Fehler beim Initialisieren des Shared Memorys.\n");
         exit(-1);
     }
-
+    //SubPub-Store initialisieren inkl. Shared Memory und Semaphore
     int subinit = initSubStore();
     if (subinit == -1) {
         printf("Fehler beim Initialisieren des Shared Memorys.\n");
@@ -253,7 +255,7 @@ int main() {
 
         printf("Verbindung von %s:%d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-        pid_t pid = fork();
+        pid_t pid = fork(); //Multiclientfähigkeit mithilfe von Elternprozess und Kindprozessen
         if (pid > 0) {
             // Elternprozess
             printf("Kindprozess mit PID %d wurde erzeugt.\n", pid);
@@ -267,7 +269,7 @@ int main() {
             signal(SIGINT, SIG_IGN);
             socketChildPID = getpid();
 
-            //Subscription-Lauscher Kind erstellen
+            //Subscription-Lauscher Kindprozess erstellen
             subpid = fork();
             if (subpid == 0) {
                 //Kindprozess
@@ -424,7 +426,7 @@ long commandInterpreter(char *comm, int cfd) {
                 subClearKey(key);
             }
         }
-    } else if (strcmp(pfx, "BEG") == 0) { // Befehl BEG
+    } else if (strcmp(pfx, "BEG") == 0) { // Befehl BEG; Beginn einer Transaktion
         if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
             printf("BEG: Zu viele Argumente angegeben\n");
             bytes_sent = sendError(too_many_arguments, cfd);
@@ -438,7 +440,7 @@ long commandInterpreter(char *comm, int cfd) {
             char *out = "transaction_begins\r\n";
             bytes_sent = write(cfd, out, strlen(out));
         }
-    } else if (strcmp(pfx, "END") == 0) { // Befehl END
+    } else if (strcmp(pfx, "END") == 0) { // Befehl END; Beenden einer Transaktion
         if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
             printf("END: Zu viele Argumente angegeben\n");
             bytes_sent = sendError(too_many_arguments, cfd);
@@ -452,7 +454,7 @@ long commandInterpreter(char *comm, int cfd) {
             char *out = "transaction_ends\r\n";
             bytes_sent = write(cfd, out, strlen(out));
         }
-    } else if (strcmp(pfx, "QUIT") == 0) { // Befehl QUIT
+    } else if (strcmp(pfx, "QUIT") == 0) { // Befehl QUIT; Schließen der Verbindung
         if (value != NULL || key != NULL) { //Überprüfen, dass kein Value angegeben wurde
             printf("QUIT: Zu viele Argumente angegeben\n");
             bytes_sent = sendError(too_many_arguments, cfd);
@@ -460,7 +462,7 @@ long commandInterpreter(char *comm, int cfd) {
             printf("QUIT: Verbindung wird beendet\n");
             return -2;
         }
-    } else if (strcmp(pfx, "SUB") == 0) { // Befehl SUB
+    } else if (strcmp(pfx, "SUB") == 0) { // Befehl SUB; Subscription für einen Schlüssel gestartet
         if (value != NULL) { //Überprüfen, dass kein Value angegeben wurde
             printf("SUB: Zu viele Argumente angegeben\n");
             bytes_sent = sendError(too_many_arguments, cfd);
