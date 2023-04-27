@@ -268,7 +268,6 @@ int main() {
             socketChildPID = getpid();
 
             //Subscription-Lauscher Kind erstellen
-            //TODO: Kind vernünftig beenden
             subpid = fork();
             if (subpid == 0) {
                 //Kindprozess

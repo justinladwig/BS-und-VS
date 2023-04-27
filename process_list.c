@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <sys/wait.h>
 
 struct process_node {
     pid_t pid;
@@ -45,7 +46,6 @@ void remove_process(pid_t pid) {
 int terminate_all_processes() {
     ProcessNode* current = process_list;
     while (current != NULL) {
-        //TODO: Problem: Nicht alle Prozesse werden beendet
         if (kill(current->pid, SIGTERM) == -1) {
             perror("kill");
             return -1;
