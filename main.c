@@ -135,7 +135,7 @@ void sigSIGCHLDHandler(int sig_num) {
     pid_t pid;
     int status;
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        remove_process(pid); // Prozess aus der Liste entfernen
+        remove_process(pid); // Prozess aus der Liste entfernen (bei SubChild nicht relevant)
         if (WIFEXITED(status)) {
             printf("Kindprozess mit PID %d beendet mit Status %d\n", pid, WEXITSTATUS(status));
         } else if (WIFSIGNALED(status)) {
@@ -145,15 +145,19 @@ void sigSIGCHLDHandler(int sig_num) {
 }
 
 void sigSubChildTerminateHandler (int sig_num){
+    int pid;
+    int status;
     if (kill(subpid, SIGTERM) == -1) {
         fprintf(stderr, "Error killing child process: %s\n", strerror(errno));
+        exit(1);
     }
+    exit(0);
 }
 
 int main() {
     signal(SIGINT, sigSystemHandler); // Wird aufgerufen, wenn SIGINT empfangen wird (z.B. durch Strg+C)
-    // signal(SIGTERM, signalHandler); // Wird aufgerufen, wenn SIGTERM empfangen wird (z.B. durch kill)
     signal(SIGQUIT, sigSystemHandler); // Wird aufgerufen, wenn SIGQUIT empfangen wird (z.B. durch Strg+\)
+    signal(SIGTERM, sigSystemHandler); // Wird aufgerufen, wenn SIGTERM empfangen wird (z.B. durch kill)
     signal(SIGCHLD, sigSIGCHLDHandler); // Wird aufgerufen, wenn ein Kindprozess beendet wird (z.B. durch exit()) und verhindert, dass der Prozess als Zombie-Prozess in der Prozessliste verbleibt
     printf("Programm wurde gestartet. (PID: %d)\n", getpid());
 
@@ -258,8 +262,9 @@ int main() {
             continue;
         } else if (pid == 0) {
             // Kindprozess
-            signal(SIGCHLD, SIG_IGN);
+//            signal(SIGCHLD, SIG_IGN);
             signal(SIGTERM, sigSubChildTerminateHandler);
+            signal(SIGINT, SIG_IGN);
             socketChildPID = getpid();
 
             //Subscription-Lauscher Kind erstellen
@@ -304,7 +309,7 @@ int main() {
                 printf("Client %s:%d disconnected.\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
                 sigSubChildTerminateHandler(SIGTERM); //Kindprozess beenden
-                printf("Subscriber Prozess beendet!\n");
+                printf("Subscriber Prozess %i beendet!\n", subpid);
                 break;
             } else {
                 // Fehler
