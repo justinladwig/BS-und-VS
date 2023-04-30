@@ -26,7 +26,7 @@ void handle_request(int client_socket) {
 
 // Creates a new instance of the RestApi class
 // @return A pointer to a new instance of the RestApi class
-RestApi* rest_api_create() {
+RestApi* create() {
     RestApi* rest_api = malloc(sizeof(RestApi));
     if (rest_api == NULL) {
         perror("failed to allocate memory for RestApi");
@@ -42,7 +42,7 @@ RestApi* rest_api_create() {
     struct sockaddr_in address = {0};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    address.sin_port = htons(RESTPORT);
 
     int bind_result = bind(rest_api->server_socket, (struct sockaddr*)&address, sizeof(address));
     if (bind_result == -1) {
@@ -61,7 +61,7 @@ RestApi* rest_api_create() {
 
 // Starts the REST API server and listens for incoming connections
 // @param rest_api A pointer to an instance of the RestApi class
-void rest_api_run(RestApi* rest_api) {
+void run(RestApi* rest_api) {
     while (true) {
         struct sockaddr_in client_address = {0};
         socklen_t client_address_length = sizeof(client_address);
@@ -70,14 +70,13 @@ void rest_api_run(RestApi* rest_api) {
             perror("accept failed");
             continue;
         }
-
         handle_request(client_socket);
     }
 }
 
 // Destroys an instance of the RestApi class and frees the associated resources
 // @param rest_api A pointer to an instance of the RestApi class
-void rest_api_destroy(RestApi* rest_api) {
+void destroy(RestApi* rest_api) {
     if (rest_api != NULL) {
         close(rest_api->server_socket);
         free(rest_api);

@@ -14,13 +14,13 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#define PORT 8080
+#define RESTPORT 8080
 #define BUFFER_SIZE 1024
 
-RestApi* rest_api_create();
+RestApi* create();
 
-void rest_api_run(RestApi* rest_api);
+void run(RestApi* rest_api);
 
-void rest_api_destroy(RestApi* rest_api);
+void destroy(RestApi* rest_api);
 
 #endif //PRAKBS23_RESTAPI_H
