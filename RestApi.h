@@ -14,7 +14,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#define RESTPORT 8080
+#define RESTPORT 5680
 #define BUFFER_SIZE 1024
 
 typedef struct {

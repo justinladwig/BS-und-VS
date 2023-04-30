@@ -11,7 +11,16 @@ void handle_request(int client_socket) {
     if (strncmp(buffer, "GET /hello", 10) == 0) {
         const char* response = "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nHello, world!";
         write(client_socket, response, strlen(response));
-    } else {
+    } else if(strncmp(buffer, "GET /key/", 9) == 0) {
+        char delimiter[] = "key/";
+        char *key = strtok(buffer, delimiter);
+        // Rückgabe des Keys
+        const char* response = "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nKey: (KEY)";
+        write(client_socket, response, strlen(response));
+    } else if (strncmp(buffer, "GET /key", 8) == 0) {
+
+    }
+    else {
         const char* response = "HTTP/1.1 404 Not Found\nContent-Type: text/plain\n\nNot found.";
         write(client_socket, response, strlen(response));
     }
