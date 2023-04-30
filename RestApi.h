@@ -1,7 +1,3 @@
-//
-// Created by LeonSchneider on 28.04.2023.
-//
-
 #ifndef PRAKBS23_RESTAPI_H
 #define PRAKBS23_RESTAPI_H
 

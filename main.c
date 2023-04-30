@@ -23,8 +23,8 @@
 #include "process_list.h"
 #include "RestApi.h"
 
+#define TRUE 1
 #define BUFSIZE 1024 // Größe des Buffers
-#define ENDLOSSCHLEIFE 1
 #define PORT 5678 // Port, auf dem der Server lauscht
 
 /*******************************************************************************
@@ -152,8 +152,6 @@ void sigSIGCHLDHandler(int sig_num) {
 }
 
 void sigSubChildTerminateHandler (int sig_num){
-    int pid;
-    int status;
     if (kill(subpid, SIGTERM) == -1) {
         fprintf(stderr, "Error killing child process: %s\n", strerror(errno));
         exit(1);
@@ -266,7 +264,7 @@ int main() {
     printf("Socket-Server läuft auf %s:%d und wartet auf Verbindungen...\n", inet_ntoa(server.sin_addr), ntohs(server.sin_port));
     if (server.sin_addr.s_addr == INADDR_ANY) printf("HINWEIS: 0.0.0.0 bedeutet, dass der Server auf allen Netzwerk-Interfaces lauscht.\n");
 
-    while (ENDLOSSCHLEIFE) {
+    while (TRUE) {
 
         // Verbindung eines Clients wird entgegengenommen
         cfd = accept(rfd, (struct sockaddr *) &client, &client_len);
