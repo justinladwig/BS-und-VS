@@ -9,7 +9,7 @@ void handle_request(int client_socket) {
 
     // Parse the incoming request to determine what action to take.
     if (strncmp(buffer, "GET /hello", 10) == 0) {
-        const char* response = "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nHello, world!";
+        const char *response = "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nHello, world!";
         write(client_socket, response, strlen(response));
     } else if(strncmp(buffer, "GET /key/", 9) == 0) {
         char delimiter[] = "key/";
