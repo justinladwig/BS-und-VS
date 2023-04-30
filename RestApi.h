@@ -17,6 +17,11 @@
 #define RESTPORT 8080
 #define BUFFER_SIZE 1024
 
+typedef struct {
+    // Server socket used for listening for incoming connections
+    int server_socket;
+} RestApi;
+
 RestApi* create();
 
 void run(RestApi* rest_api);

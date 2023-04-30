@@ -21,6 +21,7 @@
 #include "keyValStore.h"
 #include "sub.h"
 #include "process_list.h"
+#include "RestApi.h"
 
 #define BUFSIZE 1024 // Größe des Buffers
 #define ENDLOSSCHLEIFE 1
@@ -79,8 +80,10 @@ int msgqueue;
 int transsemid;
 struct sembuf enter, leave;
 enum transaction_states transaction_state = NOT_ACTIVE;
+RestApi *api;
 pid_t socketChildPID = 0;
 pid_t subpid = 0;
+pid_t restPid = 0;
 
 struct subscription_msg {
     long mtype;
@@ -129,6 +132,8 @@ void sigSystemHandler(int sig_num){
     if(close(rfd) == -1){
         fprintf(stderr, "Error closing socket: %s\n", strerror(errno));
     }
+    // Beenden der API
+    kill(restPid, SIGTERM);
     // Beenden des Programms
     exit(0);
 }
@@ -154,6 +159,10 @@ void sigSubChildTerminateHandler (int sig_num){
         exit(1);
     }
     exit(0);
+}
+
+void sigRestHandler(int sig_num){
+    destroy(api);
 }
 
 int main() {
@@ -197,6 +206,19 @@ int main() {
     }
 
     printf("Allgemeine Initialisierung abgeschlossen.\n");
+
+    //REST API starten
+    if ( (restPid = fork()) == 0) {
+        signal(SIGTERM, sigRestHandler);
+        signal(SIGINT, SIG_IGN);
+
+        //REST API initialisieren
+        api = create();
+
+        //REST API starten
+        run(api);
+        return(0);
+    }
 
     //Initialisierung des Socket-Servers
 

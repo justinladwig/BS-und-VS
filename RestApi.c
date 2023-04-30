@@ -3,11 +3,6 @@
 //
 #include "RestApi.h"
 
-typedef struct {
-    // Server socket used for listening for incoming connections
-    int server_socket;
-} RestApi;
-
 void handle_request(int client_socket) {
     char buffer[BUFFER_SIZE] = {0};
     ssize_t read_size = read(client_socket, buffer, BUFFER_SIZE);
