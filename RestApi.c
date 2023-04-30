@@ -14,51 +14,73 @@ void handle_request(int client_socket) {
     char response[200];
     // Parse the incoming request to determine what action to take.
     if (strncmp(buffer, "GET /hello", 10) == 0) {
-        const char *response = "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nHello, world!";
+        strcpy(response, "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nHello, world!");
         write(client_socket, response, strlen(response));
     } else if(strncmp(buffer, "GET /key/", 9) == 0) {
         char *key = strtok(buffer + 9, " /");
         sprintf(user_json, "[{\"key\": \"%s\", \"value\": \"%s\"}]", key, get(key));
+        sprintf(response, "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: %ld\r\n\r\n%s", strlen(user_json) , user_json);
     } else if (strncmp(buffer, "PUT /key/", 9)== 0) {
         char *key = strtok(buffer + 9, " /");
         char *body_start = strstr(buffer + 9 + strlen(key) + 1, "\r\n\r\n") + 4;
         char body[100] = {"\0"};
         strcpy(body, body_start);
         // TODO: Parse the incoming JSON body and update the key-value store
-        switch (jsmn_parse(&parser, body, strlen(body), tokens, 10)) {
+        int numTokens = 0;
+        switch (numTokens = jsmn_parse(&parser, body, strlen(body), tokens, 10)) {
             case JSMN_ERROR_INVAL: printf("Invalid JSON string.\n"); return;
             case JSMN_ERROR_NOMEM: printf("Not enough tokens.\n"); return;
             case JSMN_ERROR_PART: printf("JSON string is too short, expecting more JSON data.\n"); return;
         }
         char tokenKey[100] = {"\0"};
-        strncpy(tokenKey, body + tokens[2].start, tokens[2].end - tokens[2].start);
-        if ((tokens[2].type != JSMN_STRING) || (strcmp(tokenKey, key) != 0)) {
-            printf("Invalid JSON string.\n");
-            return;
-        }
         char tokenValue[100] = {"\0"};
-        strncpy(tokenValue, body + tokens[4].start, tokens[4].end - tokens[4].start);
-        if (tokens[4].type != JSMN_STRING) {
-            printf("Invalid JSON string.\n");
+        for (int i = 0; i < numTokens; i++) {
+            if (tokens[i].type == JSMN_STRING && strncmp(body + tokens[i].start, "key", tokens[i].end - tokens[i].start) == 0) {
+                strncpy(tokenKey, body + tokens[i + 1].start, tokens[i + 1].end - tokens[i + 1].start);
+                if (strncmp(body + tokens[i + 2].start, "value", tokens[i + 2].end - tokens[i + 2].start) == 0) {
+                    strncpy(tokenValue, body + tokens[i + 3].start, tokens[i + 3].end - tokens[i + 3].start);
+                    break;
+                }
+                printf("Invalid JSON string.\n");
+                return;
+            }
+            if (i == numTokens - 1) {
+                printf("Invalid JSON string.\n");
+                return;
+            }
+        }
+        if (strcmp(tokenKey, key) != 0) {
+            printf("Key, does not match to Ressource!\n");
             return;
         }
-        //Telnet stürzt ab ...
-        put(tokenKey,tokenValue);
+        if (contains(tokenKey) == 0) { //Überprüfen, ob Key bereits vorhanden ist, dann soll der neue Wert in der Hashmap gespeichert werden und der alte Wert zurückgegeben werden
+            char *OldGet = get(tokenKey);
+            char *old_ = malloc(strlen(OldGet) + 1);
+            strcpy(old_,OldGet); //Alten Wert in einen neuen String kopieren, da dieser sonst überschrieben wird
+            change(key, tokenValue); //Value wird geändert
+            printf("PUT (REST): Key %s wurde geändert. Alter Wert: %s, neuer Wert: %s\n", key, old_, tokenValue);
+            sprintf(user_json, "[{\"key\": \"%s\", \"value\": \"%s\", \"status\": \"changed\", \"old_value\": \"%s\"}]", tokenKey, tokenValue,  old_);
+            sprintf(response, "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: %ld\r\n\r\n%s", strlen(user_json) , user_json);
+        } else {
+            if (put(key, tokenValue) == -1) { //Key und Value werden in die Hashmap gespeichert
+                printf("PUT: Key %s konnte nicht hinzugefügt werden: Kein Speicherplatz verfügbar\n", key);
+            } else {
+                printf("PUT: Key %s wurde hinzugefügt. Wert: %s\n", key, tokenValue);
+                sprintf(user_json, "[{\"key\": \"%s\", \"value\": \"%s\", \"status\": \"added\"}]", tokenKey, tokenValue);
+                sprintf(response, "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: %ld\r\n\r\n%s", strlen(user_json) , user_json);
+            }
+        }
     } else if (strncmp(buffer, "GET /key", 8) == 0) {
         // TODO: Return all key-value pairs in the key-value store as JSON
     } else if (strncmp(buffer, "DELETE /key/", 12) == 0) {
         char *key = strtok(buffer + 12, " /");
         sprintf(user_json, "[{\"key\": \"%s\", \"value\": \"%s\", \"status\": \"deleted\"}]", key, get(key));
         delete(key);
+        sprintf(response, "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: %ld\r\n\r\n%s", strlen(user_json) , user_json);
     } else {
-        const char* response = "HTTP/1.1 404 Not Found\nContent-Type: text/plain\n\nNot found.";
-        write(client_socket, response, strlen(response));
-        return;
+        strcpy(response, "HTTP/1.1 404 Not Found\nContent-Type: text/plain\n\nNot found.");
     }
-    sprintf(response, "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: %ld\r\n\r\n%s", strlen(user_json) , user_json);
     write(client_socket, response, strlen(response));
-
-    close(client_socket);
 }
 
 // Creates a new instance of the RestApi class
@@ -109,6 +131,7 @@ void run(RestApi* rest_api) {
             continue;
         }
         handle_request(client_socket);
+        close(client_socket);
     }
 }
 
